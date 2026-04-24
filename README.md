@@ -1,4 +1,4 @@
-# cbi - CreatiBI CLI
+# CreatiBI CLI
 
 CreatiBI 命令行工具，用于素材库管理。
 
