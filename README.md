@@ -10,10 +10,10 @@ CreatiBI 命令行工具，用于素材库管理。
 
 ```bash
 # 安装到项目
-npm install @creatibi/cbi-cli
+npm install @creatibi/cbi-cli@latest
 
 # 或全局安装
-npm install -g @creatibi/cbi-cli
+npm install -g @creatibi/cbi-cli@latest
 
 # 使用 npx（无需安装）
 npx @creatibi/cbi-cli --help
@@ -73,7 +73,8 @@ cbi
     ├── list                  # 素材库列表
     ├── folders               # 文件夹列表
     ├── file-check            # 文件查重（MD5）
-    └── file-create           # 上传文件
+    ├── file-create           # 上传文件
+    └── file-detail           # 获取文件详情
 ```
 
 ---
@@ -275,6 +276,26 @@ cbi repository file-create \
 2. 计算 MD5 进行查重（除非 `--skip-check`）
 3. 如果重复，提示用户（除非 `--force`）
 4. 上传文件
+
+### 获取文件详情
+
+```bash
+# 获取文件详情
+cbi repository file-detail <file-id>
+
+# JSON 格式输出
+cbi repository file-detail 123 --format json
+
+# 静默模式（只输出 JSON）
+cbi repository file-detail 123 -q
+```
+
+输出信息包括：
+- 基本信息：ID、名称、格式、大小、时长、分辨率等
+- 来源信息：来源平台、来源 URL
+- 关联产品、标签、文件夹
+- 创建者信息
+- 各种 URL：封面、原始文件、预览
 
 ---
 

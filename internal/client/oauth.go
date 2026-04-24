@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -68,6 +69,30 @@ func (c *OAuthClient) StartOAuthFlow(ctx context.Context) error {
 		return err
 	}
 
+	// 尝试多个端口
+	port := 8080
+	maxPort := 8090
+	var server *http.Server
+	var callbackURL string
+
+	for ; port <= maxPort; port++ {
+		addr := fmt.Sprintf(":%d", port)
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			ln.Close()
+			callbackURL = fmt.Sprintf("http://localhost:%d/callback", port)
+			server = &http.Server{Addr: addr}
+			break
+		}
+	}
+
+	if server == nil {
+		return cliErr.NewCLIError("PORT_UNAVAILABLE", "无法找到可用端口 (8080-8090)")
+	}
+
+	// 更新 redirect URL
+	c.config.RedirectURL = callbackURL
+
 	// 构建授权 URL
 	authURL := c.buildAuthorizeURL(state)
 
@@ -82,7 +107,6 @@ func (c *OAuthClient) StartOAuthFlow(ctx context.Context) error {
 	tokenChan := make(chan string, 1)
 	errChan := make(chan error, 1)
 
-	server := &http.Server{Addr: ":8080"}
 	http.HandleFunc("/callback", c.handleCallback(state, tokenChan, errChan))
 
 	go func() {

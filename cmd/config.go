@@ -2,10 +2,18 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/exec"
+	"os/signal"
+	"runtime"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -26,9 +34,9 @@ var configInitCmd = &cobra.Command{
 	Long: `初始化 CLI 本地配置，创建应用凭证配置文件。
 
 流程：
-1. 检查配置是否已存在
-2. 若已存在，需使用 --new 强制覆盖
-3. 引导用户输入应用凭证信息
+1. 自动打开浏览器访问开放平台
+2. 在开放平台创建应用并获取凭证
+3. 凭证会自动回传到 CLI（若失败则手动输入）
 4. 写入配置文件 ~/.cbi/config.json
 
 首次使用需要：
@@ -49,56 +57,20 @@ var configInitCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// 引导用户创建应用
-		fmt.Fprintln(cmd.OutOrStdout(), "初始化 CreatiBI CLI 配置")
-		fmt.Fprintln(cmd.OutOrStdout(), "")
-		fmt.Fprintln(cmd.OutOrStdout(), "请先在开放平台创建应用并获取凭证:")
-		fmt.Fprintln(cmd.OutOrStdout(), "  平台地址: https://open.creatibi.cn")
-		fmt.Fprintln(cmd.OutOrStdout(), "")
-		fmt.Fprintln(cmd.OutOrStdout(), "创建应用后，请准备好以下信息:")
-		fmt.Fprintln(cmd.OutOrStdout(), "  - client_id (应用 ID)")
-		fmt.Fprintln(cmd.OutOrStdout(), "  - client_secret (应用密钥)")
-		fmt.Fprintln(cmd.OutOrStdout(), "")
+		// 尝试自动获取凭证
+		credentials := tryAutoFetchCredentials(cmd)
 
-		reader := bufio.NewReader(os.Stdin)
-
-		// 输入 client_id
-		fmt.Fprint(cmd.OutOrStdout(), "请输入 client_id: ")
-		clientID, _ := reader.ReadString('\n')
-		clientID = strings.TrimSpace(clientID)
-		if clientID == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_id 不能为空")
-			os.Exit(1)
+		// 如果自动获取失败，手动输入
+		if credentials == nil {
+			credentials = promptForCredentials(cmd)
 		}
-
-		// 输入 client_secret
-		fmt.Fprint(cmd.OutOrStdout(), "请输入 client_secret: ")
-		clientSecret, _ := reader.ReadString('\n')
-		clientSecret = strings.TrimSpace(clientSecret)
-		if clientSecret == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_secret 不能为空")
-			os.Exit(1)
-		}
-
-		// 输入 base_url（可选，有默认值）
-		fmt.Fprint(cmd.OutOrStdout(), "请输入 base_url (默认: https://open.creatibi.cn): ")
-		baseURL, _ := reader.ReadString('\n')
-		baseURL = strings.TrimSpace(baseURL)
-		if baseURL == "" {
-			baseURL = "https://open.creatibi.cn"
-		}
-
-		// 输入 default_workspace（可选）
-		fmt.Fprint(cmd.OutOrStdout(), "请输入 default_workspace (可选，留空跳过): ")
-		defaultWorkspace, _ := reader.ReadString('\n')
-		defaultWorkspace = strings.TrimSpace(defaultWorkspace)
 
 		// 写入配置
 		cfg := &config.AppConfig{
-			BaseURL:         baseURL,
-			ClientID:        clientID,
-			ClientSecret:    clientSecret,
-			DefaultWorkspace: defaultWorkspace,
+			BaseURL:         credentials.BaseURL,
+			ClientID:        credentials.ClientID,
+			ClientSecret:    credentials.ClientSecret,
+			DefaultWorkspace: credentials.DefaultWorkspace,
 		}
 
 		if err := config.SaveAppConfig(cfg); err != nil {
@@ -113,6 +85,238 @@ var configInitCmd = &cobra.Command{
 		fmt.Fprintln(cmd.OutOrStdout(), "下一步:")
 		fmt.Fprintln(cmd.OutOrStdout(), "  cbi auth login  # 使用 OAuth 登录")
 	},
+}
+
+// Credential 凭证信息
+type Credential struct {
+	ClientID        string `json:"client_id"`
+	ClientSecret    string `json:"client_secret"`
+	BaseURL         string `json:"base_url"`
+	DefaultWorkspace string `json:"default_workspace"`
+}
+
+// tryAutoFetchCredentials 尝试自动获取凭证
+func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
+	fmt.Fprintln(cmd.OutOrStdout(), "正在打开 CreatiBI 开放平台...")
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+
+	callbackPath := "/config/callback"
+
+	// 尝试多个端口
+	port := 8080
+	maxPort := 8090
+	var server *http.Server
+	var callbackURL string
+
+	for ; port <= maxPort; port++ {
+		addr := fmt.Sprintf(":%d", port)
+		// 尝试绑定端口
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			ln.Close()
+			// 端口可用
+			callbackURL = fmt.Sprintf("http://localhost:%d%s", port, callbackPath)
+			server = &http.Server{Addr: addr}
+			break
+		}
+	}
+
+	if server == nil {
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "无法找到可用端口 (8080-8090)\n")
+		}
+		return nil
+	}
+
+	platformURL := fmt.Sprintf("https://open.creatibi.cn/?callback=%s", callbackURL)
+
+	// 创建上下文，支持 Ctrl+C 取消
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 监听中断信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n取消初始化...")
+		cancel()
+	}()
+
+	// 凭证接收通道
+	credChan := make(chan *Credential, 1)
+	errChan := make(chan error, 1)
+
+	http.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
+		// 解析凭证参数
+		clientID := r.URL.Query().Get("client_id")
+		clientSecret := r.URL.Query().Get("client_secret")
+		baseURL := r.URL.Query().Get("base_url")
+		defaultWorkspace := r.URL.Query().Get("default_workspace")
+
+		if clientID != "" && clientSecret != "" {
+			credChan <- &Credential{
+				ClientID:        clientID,
+				ClientSecret:    clientSecret,
+				BaseURL:         baseURL,
+				DefaultWorkspace: defaultWorkspace,
+			}
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("✓ 凭证已接收，CLI 将自动完成配置"))
+		} else {
+			errChan <- fmt.Errorf("缺少凭证参数")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("错误: 缺少凭证参数"))
+		}
+	})
+
+	// 在后台启动服务器
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errChan <- err
+		}
+	}()
+
+	// 打开浏览器
+	if err := openBrowser(platformURL); err != nil {
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "无法自动打开浏览器: %s\n", err.Error())
+		}
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "请在浏览器中完成应用创建:")
+	fmt.Fprintf(cmd.OutOrStdout(), "  授权 URL: %s\n", platformURL)
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+
+	// 倒计时显示
+	remaining := 30
+	done := make(chan bool, 1)
+
+	// 启动倒计时显示 goroutine
+	go func() {
+		fmt.Fprintf(cmd.OutOrStdout(), "等待凭证回传... 剩余 %2d 秒 (按 Ctrl+C 取消)", remaining)
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(1 * time.Second):
+				remaining--
+				if remaining > 0 {
+					fmt.Fprintf(cmd.OutOrStdout(), "\r等待凭证回传... 剩余 %2d 秒 (按 Ctrl+C 取消)", remaining)
+				}
+			}
+		}
+	}()
+
+	// 等待凭证或超时
+	select {
+	case cred := <-credChan:
+		done <- true
+		shutdownServer(ctx, server)
+		fmt.Fprintln(cmd.OutOrStdout(), "\r                                    ")
+		fmt.Fprintln(cmd.OutOrStdout(), "")
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 自动获取凭证成功")
+		if cred.BaseURL == "" {
+			cred.BaseURL = "https://open.creatibi.cn"
+		}
+		return cred
+
+	case err := <-errChan:
+		done <- true
+		shutdownServer(ctx, server)
+		fmt.Fprintln(cmd.OutOrStdout(), "\r                                    ")
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "自动获取失败: %s\n", err.Error())
+		}
+		return nil
+
+	case <-ctx.Done():
+		done <- true
+		shutdownServer(ctx, server)
+		fmt.Fprintln(cmd.OutOrStdout(), "\r                                    ")
+		fmt.Fprintln(cmd.OutOrStdout(), "")
+		fmt.Fprintln(cmd.OutOrStdout(), "超时，切换到手动输入模式")
+		return nil
+	}
+}
+
+// shutdownServer 关闭服务器
+func shutdownServer(ctx context.Context, server *http.Server) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	server.Shutdown(shutdownCtx)
+}
+
+// openBrowser 打开浏览器
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	return cmd.Start()
+}
+
+// promptForCredentials 手动输入凭证
+func promptForCredentials(cmd *cobra.Command) *Credential {
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+	fmt.Fprintln(cmd.OutOrStdout(), "初始化 CreatiBI CLI 配置")
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+	fmt.Fprintln(cmd.OutOrStdout(), "请先在开放平台创建应用并获取凭证:")
+	fmt.Fprintln(cmd.OutOrStdout(), "  平台地址: https://open.creatibi.cn")
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+	fmt.Fprintln(cmd.OutOrStdout(), "创建应用后，请准备好以下信息:")
+	fmt.Fprintln(cmd.OutOrStdout(), "  - client_id (应用 ID)")
+	fmt.Fprintln(cmd.OutOrStdout(), "  - client_secret (应用密钥)")
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+
+	reader := bufio.NewReader(os.Stdin)
+
+	// 输入 client_id
+	fmt.Fprint(cmd.OutOrStdout(), "请输入 client_id: ")
+	clientID, _ := reader.ReadString('\n')
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_id 不能为空")
+		os.Exit(1)
+	}
+
+	// 输入 client_secret
+	fmt.Fprint(cmd.OutOrStdout(), "请输入 client_secret: ")
+	clientSecret, _ := reader.ReadString('\n')
+	clientSecret = strings.TrimSpace(clientSecret)
+	if clientSecret == "" {
+		fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_secret 不能为空")
+		os.Exit(1)
+	}
+
+	// 输入 base_url（可选，有默认值）
+	fmt.Fprint(cmd.OutOrStdout(), "请输入 base_url (默认: https://open.creatibi.cn): ")
+	baseURL, _ := reader.ReadString('\n')
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		baseURL = "https://open.creatibi.cn"
+	}
+
+	// 输入 default_workspace（可选）
+	fmt.Fprint(cmd.OutOrStdout(), "请输入 default_workspace (可选，留空跳过): ")
+	defaultWorkspace, _ := reader.ReadString('\n')
+	defaultWorkspace = strings.TrimSpace(defaultWorkspace)
+
+	return &Credential{
+		ClientID:        clientID,
+		ClientSecret:    clientSecret,
+		BaseURL:         baseURL,
+		DefaultWorkspace: defaultWorkspace,
+	}
 }
 
 // configShowCmd 显示当前配置
