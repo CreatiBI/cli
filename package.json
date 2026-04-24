@@ -1,0 +1,37 @@
+{
+  "name": "@creatibi/cbi-cli",
+  "version": "0.1.0",
+  "description": "CreatiBI CLI - 广告素材驱动的买量解决方案",
+  "keywords": [
+    "creatibi",
+    "cli",
+    "广告素材",
+    "买量"
+  ],
+  "author": "CreatiBI",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CreatiBI/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CreatiBI/cli/issues"
+  },
+  "homepage": "https://github.com/CreatiBI/cli#readme",
+  "bin": {
+    "cbi": "./scripts/run-cbi.js"
+  },
+  "scripts": {
+    "prepack": "make build-all",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "files": [
+    "bin/**/*.tar.gz",
+    "bin/**/*.zip",
+    "scripts/**/*",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=10"
+  }
+}

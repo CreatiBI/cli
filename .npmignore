@@ -1,0 +1,32 @@
+# Source code
+*.go
+cmd/
+internal/
+pkg/
+main.go
+
+# Build artifacts (except bin)
+cbi
+go.mod
+go.sum
+
+# Development files
+.git/
+.gitignore
+Makefile
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+*_test.go
+
+# Documentation (keep README)
+CLAUDE.md
