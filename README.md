@@ -37,6 +37,20 @@ make build
 sudo make install
 ```
 
+## 安装 CLI Skill（必需）
+
+为了让 Claude Code 能够自动调用 cbi CLI，需要安装对应的 Skill：
+
+```bash
+npx skills add CreatiBI/cli -y -g
+```
+
+安装成功后，Claude Code 将自动识别以下触发词：
+- `cbi`、`素材库`、`上传素材`、`上传到素材库`
+- `cbi 上传`、`cbi repository`
+- `repository file-create`、`file-list`、`file-detail`
+- `文件查重`、`批量添加标签`、`批量添加文件夹`
+
 ## 快速开始
 
 ```bash
