@@ -75,10 +75,14 @@ cbi
 └── repository (repo)         # 素材库管理
     ├── list                  # 素材库列表
     ├── folders               # 文件夹列表
+    ├── folder-create         # 创建文件夹
+    ├── tag-list              # 标签列表
     ├── file-list             # 文件列表（支持筛选）
     ├── file-detail           # 获取文件详情
     ├── file-check            # 文件查重（MD5）
-    └── file-create           # 上传文件
+    ├── file-create           # 上传文件
+    ├── file-tag-add          # 批量添加标签
+    └── file-folder-add       # 批量添加文件到文件夹
 ```
 
 ---
@@ -193,6 +197,41 @@ cbi repository folders --repository-id 1 --parent-folder-id 100
 - `--parent-folder-id`: 父文件夹 ID（0 表示根目录）
 - `--with-statistic`: 包含统计信息（文件数量）
 
+### 创建文件夹
+
+```bash
+# 创建根目录文件夹
+cbi repository folder-create --repository-id 1 --name "新文件夹"
+
+# 创建子文件夹
+cbi repository folder-create --repository-id 1 --name "子文件夹" --parent-folder-id 100
+
+# JSON 格式输出
+cbi repository folder-create --repository-id 1 --name "新文件夹" --format json
+```
+
+参数：
+- `--repository-id`: 素材库 ID（必填）
+- `--name`: 文件夹名称（必填）
+- `--parent-folder-id`: 父文件夹 ID（可选，默认为根目录）
+
+### 列出标签
+
+```bash
+# 列出素材库所有标签
+cbi repository tag-list --repository-id 1
+
+# 包含使用次数统计
+cbi repository tag-list --repository-id 1 --with-refcnt
+
+# JSON 格式
+cbi repository tag-list --repository-id 1 --format json
+```
+
+参数：
+- `--repository-id`: 材库 ID（必填）
+- `--with-refcnt`: 包含标签使用次数
+
 ### 查询素材文件列表
 
 ```bash
@@ -220,6 +259,7 @@ cbi repository file-list --repository-id 1 --format json
 - `--folder-id`: 文件夹 ID（文件夹筛选模式）
 - `--tag-id`: 标签 ID（标签筛选模式）
 - `--keyword`: 搜索关键词（搜索名称+signals）
+- `--has-signals`: 按视频理解信号筛选（true/false）
 - `--page`: 页码（默认 1）
 - `--pageSize`: 每页条数（默认 20，最大 50）
 
@@ -227,6 +267,7 @@ cbi repository file-list --repository-id 1 --format json
 - `--folder-id`: 按文件夹筛选
 - `--tag-id`: 按标签筛选
 - `--keyword`: 按关键词搜索
+- `--has-signals`: 按是否有视频理解信号筛选
 
 ### 获取文件详情
 
@@ -305,6 +346,36 @@ cbi repository file-check --repository-id 1 --file ./image.png -v
 - `--repository-id`: 素材库 ID（必填）
 - `--file`: 本地文件路径（用于计算 MD5）
 - `--file-md5`: 文件 MD5 值
+
+### 批量添加标签
+
+```bash
+# 为多个文件添加标签
+cbi repository file-tag-add --repository-id 1 --file-ids 123,456,789 --tag-ids 5,10
+
+# JSON 格式输出
+cbi repository file-tag-add --repository-id 1 --file-ids 123,456 --tag-ids 5 --format json
+```
+
+参数：
+- `--repository-id`: 素材库 ID（必填）
+- `--file-ids`: 文件 ID 列表（逗号分隔，必填）
+- `--tag-ids`: 标签 ID 列表（逗号分隔，必填）
+
+### 批量添加文件到文件夹
+
+```bash
+# 将多个文件添加到指定文件夹
+cbi repository file-folder-add --repository-id 1 --file-ids 123,456,789 --folder-id 100
+
+# JSON 格式输出
+cbi repository file-folder-add --repository-id 1 --file-ids 123,456 --folder-id 100 --format json
+```
+
+参数：
+- `--repository-id`: 素材库 ID（必填）
+- `--file-ids`: 文件 ID 列表（逗号分隔，必填）
+- `--folder-id`: 目标文件夹 ID（必填）
 
 ### 上传文件
 

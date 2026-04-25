@@ -39,8 +39,8 @@ type Repository struct {
 
 // Folder 文件夹信息
 type Folder struct {
-	ID       int64      `json:"id"`
-	Name     string     `json:"name"`
+	ID        int64      `json:"id"`
+	Name      string     `json:"name"`
 	Statistic *Statistic `json:"statistic,omitempty"`
 }
 
@@ -102,15 +102,18 @@ type Product struct {
 
 // Tag 标签
 type Tag struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Color string `json:"color"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Color  string `json:"color"`
+	RefCnt int64  `json:"refCnt,omitempty"` // 使用次数（标签列表返回）
 }
 
 // FolderInfo 文件夹信息（简化版）
 type FolderInfo struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Color  string `json:"color,omitempty"`
+	Icon   int    `json:"icon,omitempty"`
 }
 
 // CreatorInfo 创建者信息
@@ -218,6 +221,237 @@ func (c *RepositoryClient) ListFolders(ctx context.Context, repositoryID int64, 
 	})
 
 	return folders, nil
+}
+
+// CreateFolderRequest 创建文件夹请求
+type CreateFolderRequest struct {
+	RepositoryID int64
+	Name         string
+	ParentID     int64  // 0 = 顶级文件夹
+	Color        string // 可选
+	Icon         int    // 可选，图标编号
+}
+
+// CreateFolderResult 创建文件夹结果
+type CreateFolderResult struct {
+	FolderID     int64  `json:"folderId"`
+	RepositoryID int64  `json:"repositoryId"`
+	ParentID     int64  `json:"parentId"`
+	Name         string `json:"name"`
+	Color        string `json:"color"`
+	Icon         int    `json:"icon"`
+}
+
+// CreateFolder 创建文件夹
+func (c *RepositoryClient) CreateFolder(ctx context.Context, req *CreateFolderRequest) (*CreateFolderResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"repositoryId": req.RepositoryID,
+		"name":         req.Name,
+	}
+	if req.ParentID > 0 {
+		body["parentId"] = req.ParentID
+	} else {
+		body["parentId"] = 0
+	}
+	if req.Color != "" {
+		body["color"] = req.Color
+	}
+	if req.Icon > 0 {
+		body["icon"] = req.Icon
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/repository/folder/create")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FOLDER_CREATE_ERROR",
+			fmt.Sprintf("创建文件夹失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &CreateFolderResult{
+		FolderID:     data.Get("folderId").Int(),
+		RepositoryID: data.Get("repositoryId").Int(),
+		ParentID:     data.Get("parentId").Int(),
+		Name:         data.Get("name").String(),
+		Color:        data.Get("color").String(),
+		Icon:         int(data.Get("icon").Int()),
+	}, nil
+}
+
+// ListTags 获取档案库标签列表
+func (c *RepositoryClient) ListTags(ctx context.Context, repositoryID int64) ([]Tag, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": repositoryID,
+		}).
+		Post("/openapi/v1/repository/tag/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("TAG_LIST_ERROR",
+			fmt.Sprintf("获取标签列表失败 (%d)", codeVal), message)
+	}
+
+	tags := []Tag{}
+	result.Get("data.tags").ForEach(func(_, value gjson.Result) bool {
+		tags = append(tags, Tag{
+			ID:     value.Get("id").Int(),
+			Name:   value.Get("name").String(),
+			Color:  value.Get("color").String(),
+			RefCnt: value.Get("refCnt").Int(),
+		})
+		return true
+	})
+
+	return tags, nil
+}
+
+// AddFileTagsRequest 给文件添加标签请求
+type AddFileTagsRequest struct {
+	RepositoryID int64
+	FileIDs      []int64
+	TagNames     []string
+}
+
+// AddFileTagsResult 给文件添加标签结果
+type AddFileTagsResult struct {
+	SuccessCount int        `json:"successCount"` // 成功处理的文件数量
+	CreatedTags  []Tag      `json:"createdTags"`  // 本次新创建的标签
+}
+
+// AddFileTags 给素材文件添加标签
+func (c *RepositoryClient) AddFileTags(ctx context.Context, req *AddFileTagsRequest) (*AddFileTagsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileIds":      req.FileIDs,
+			"tagNames":     req.TagNames,
+		}).
+		Post("/openapi/v1/repository/file/tag/add")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_TAG_ADD_ERROR",
+			fmt.Sprintf("添加标签失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	tagsResult := &AddFileTagsResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}
+
+	// 解析新创建的标签
+	data.Get("createdTags").ForEach(func(_, value gjson.Result) bool {
+		tagsResult.CreatedTags = append(tagsResult.CreatedTags, Tag{
+			ID:    value.Get("id").Int(),
+			Name:  value.Get("name").String(),
+			Color: value.Get("color").String(),
+		})
+		return true
+	})
+
+	return tagsResult, nil
+}
+
+// AddFilesToFolderRequest 将文件添加到文件夹请求
+type AddFilesToFolderRequest struct {
+	RepositoryID int64
+	FileIDs      []int64
+	FolderIDs    []int64
+}
+
+// AddFilesToFolderResult 将文件添加到文件夹结果
+type AddFilesToFolderResult struct {
+	SuccessCount      int `json:"successCount"`      // 新创建的关联数量
+	AddedFileCount    int `json:"addedFileCount"`    // 处理的文件数量
+	AddedFolderCount  int `json:"addedFolderCount"`  // 添加到的文件夹数量
+}
+
+// AddFilesToFolder 将素材文件添加到文件夹
+func (c *RepositoryClient) AddFilesToFolder(ctx context.Context, req *AddFilesToFolderRequest) (*AddFilesToFolderResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileIds":      req.FileIDs,
+			"folderIds":    req.FolderIDs,
+		}).
+		Post("/openapi/v1/repository/file/folder/add")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_FOLDER_ADD_ERROR",
+			fmt.Sprintf("添加到文件夹失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &AddFilesToFolderResult{
+		SuccessCount:     int(data.Get("successCount").Int()),
+		AddedFileCount:   int(data.Get("addedFileCount").Int()),
+		AddedFolderCount: int(data.Get("addedFolderCount").Int()),
+	}, nil
 }
 
 // CheckFile 检查文件是否已存在（通过 MD5）
@@ -417,12 +651,13 @@ PageSize int            `json:"pageSize"`
 
 // ListFilesRequest 文件列表请求参数
 type ListFilesRequest struct {
-RepositoryID int64
-	FolderID    int64
-TagID        int64
-Keyword      string
-	Page        int
-PageSize     int
+	RepositoryID int64
+	FolderID     int64
+	TagID        int64
+	Keyword      string
+	HasSignals   *bool // nil = 不筛选, true = 有信号, false = 无信号
+	Page         int
+PageSize      int
 }
 
 // ListFiles 获取素材库文件列表
@@ -446,6 +681,9 @@ func (c *RepositoryClient) ListFiles(ctx context.Context, req *ListFilesRequest)
 	}
 	if req.Keyword != "" {
 		body["keyword"] = req.Keyword
+	}
+	if req.HasSignals != nil {
+		body["hasSignals"] = *req.HasSignals
 	}
 	if req.Page > 0 {
 		body["page"] = req.Page
