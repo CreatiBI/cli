@@ -15,6 +15,11 @@ npm install @creatibi/cbi-cli@latest
 # 或全局安装
 npm install -g @creatibi/cbi-cli@latest
 
+# 安装 CLI Skill（必需）
+npx skills add CreatiBI/cli -y -g
+
+```
+```bash
 # 使用 npx（无需安装）
 npx @creatibi/cbi-cli --help
 ```
@@ -39,7 +44,7 @@ sudo make install
 
 ## 安装 CLI Skill（必需）
 
-为了让 Claude Code 能够自动调用 cbi CLI，需要安装对应的 Skill：
+为了让 Agent 能够自动调用 cbi CLI，需要安装对应的 Skill：
 
 ```bash
 npx skills add CreatiBI/cli -y -g
