@@ -379,6 +379,13 @@ var repositoryFileCreateCmd = &cobra.Command{
 			return
 		}
 
+		// 验证上传结果
+		if fileInfoResult.ID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "⚠ 上传可能失败：服务器返回无效的文件 ID")
+			fmt.Fprintf(cmd.OutOrStdout(), "  文件名: %s\n", fileInfoResult.Name)
+			return
+		}
+
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件上传成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", fileInfoResult.ID)
 		fmt.Fprintf(cmd.OutOrStdout(), "  文件名: %s\n", fileInfoResult.Name)

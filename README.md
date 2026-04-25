@@ -35,9 +35,6 @@ make build
 
 # 安装到系统
 sudo make install
-
-# 跨平台编译（用于发布）
-make build-all
 ```
 
 ## 快速开始
@@ -52,7 +49,13 @@ cbi auth login
 # 3. 查看素材库列表
 cbi repository list
 
-# 4. 上传文件到素材库
+# 4. 查看素材文件列表
+cbi repository file-list --repository-id 1
+
+# 5. 获取文件详情
+cbi repository file-detail 123
+
+# 6. 上传文件到素材库
 cbi repository file-create --repository-id 1 --file ./image.png
 ```
 
@@ -72,9 +75,10 @@ cbi
 └── repository (repo)         # 素材库管理
     ├── list                  # 素材库列表
     ├── folders               # 文件夹列表
+    ├── file-list             # 文件列表（支持筛选）
+    ├── file-detail           # 获取文件详情
     ├── file-check            # 文件查重（MD5）
-    ├── file-create           # 上传文件
-    └── file-detail           # 获取文件详情
+    └── file-create           # 上传文件
 ```
 
 ---
@@ -120,26 +124,6 @@ cbi config show -v
 cbi config show --format json
 ```
 
-脱敏规则：
-- client_secret: 显示前 4 位 + **** + 后 4 位
-- access_token: 显示前 4 位 + **** + 后 4 位
-- refresh_token: 显示前 4 位 + **** + 后 4 位
-
-示例输出：
-```
-当前配置:
-  配置文件: /Users/xxx/.cbi/config.json
-
-  base_url:          https://open.creatibi.cn
-  client_id:         c674ced8ed314c1e9651af5cc23c4ad7
-  client_secret:     7c9b****125b
-
-登录状态:
-  access_token:      MTG0****YTG1
-  refresh_token:     ZDJI****OTHL
-  token_expires_at:  2026-04-24 00:28:54
-```
-
 ---
 
 ## 认证模块 (auth)
@@ -147,7 +131,6 @@ cbi config show --format json
 ### OAuth 登录
 
 ```bash
-# 使用已配置的凭证登录
 cbi auth login
 ```
 
@@ -166,7 +149,7 @@ cbi auth login
 ```bash
 cbi auth whoami
 
-# 详细模式（显示 Token 信息）
+# 详细模式
 cbi auth whoami -v
 ```
 
@@ -175,8 +158,6 @@ cbi auth whoami -v
 ```bash
 cbi auth logout
 ```
-
-清除登录凭证，保留应用配置。
 
 ---
 
@@ -193,8 +174,6 @@ cbi repository list --format json
 # 使用别名
 cbi repo list
 ```
-
-输出字段：ID、名称、描述、默认、权限
 
 ### 列出文件夹
 
@@ -213,6 +192,101 @@ cbi repository folders --repository-id 1 --parent-folder-id 100
 - `--repository-id`: 素材库 ID（必填）
 - `--parent-folder-id`: 父文件夹 ID（0 表示根目录）
 - `--with-statistic`: 包含统计信息（文件数量）
+
+### 查询素材文件列表
+
+```bash
+# 列出素材库所有文件
+cbi repository file-list --repository-id 1
+
+# 按文件夹筛选
+cbi repository file-list --repository-id 1 --folder-id 10
+
+# 按标签筛选
+cbi repository file-list --repository-id 1 --tag-id 5
+
+# 搜索关键词（名称 + signals）
+cbi repository file-list --repository-id 1 --keyword "广告"
+
+# 分页查询
+cbi repository file-list --repository-id 1 --page 2 --pageSize 30
+
+# JSON 格式
+cbi repository file-list --repository-id 1 --format json
+```
+
+参数：
+- `--repository-id`: 素材库 ID（必填）
+- `--folder-id`: 文件夹 ID（文件夹筛选模式）
+- `--tag-id`: 标签 ID（标签筛选模式）
+- `--keyword`: 搜索关键词（搜索名称+signals）
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+筛选模式（oneof，不可组合）：
+- `--folder-id`: 按文件夹筛选
+- `--tag-id`: 按标签筛选
+- `--keyword`: 按关键词搜索
+
+### 获取文件详情
+
+```bash
+# 获取文件详情
+cbi repository file-detail 123
+
+# JSON 格式输出
+cbi repository file-detail 123 --format json
+
+# 静默模式（只输出 JSON）
+cbi repository file-detail 123 -q
+```
+
+输出信息包括：
+- 基本信息：ID、名称、格式、大小、时长、分辨率等
+- 来源信息：来源平台、来源 URL
+- 关联产品、标签、文件夹
+- 创建者信息
+- 视频理解信号（signals）
+- 各种 URL：封面、原始文件、预览
+
+示例输出：
+```
+文件详情:
+  ID:           123
+  名称:         广告视频.mp4
+  格式:         mp4
+  大小:         15.2MB (15200000 bytes)
+  时长:         00:30
+  分辨率:       1920x1080
+  比例:         16:9
+  帧率:         30fps
+  评分:         85
+  备注:         优质素材
+  来源平台:     douyin
+  创建时间:     2023-10-01 10:00:00
+
+关联产品:
+  - 产品A (ID: 1)
+
+标签:
+  - 游戏 (ID: 5)
+
+所在文件夹:
+  - 视频素材 (ID: 1749)
+
+创建者:
+  姓名:   张三
+  邮箱:   zhang@example.com
+  ID:     100
+
+视频理解信号:
+  [开头] 视频开头分析
+    标签: 剧情, 情感
+    内容:
+      视频开头展示主角在城市街头奔跑...
+  [人物] 主要人物特征
+    标签: 年轻男性, 运动风格
+```
 
 ### 文件查重
 
@@ -277,26 +351,6 @@ cbi repository file-create \
 3. 如果重复，提示用户（除非 `--force`）
 4. 上传文件
 
-### 获取文件详情
-
-```bash
-# 获取文件详情
-cbi repository file-detail <file-id>
-
-# JSON 格式输出
-cbi repository file-detail 123 --format json
-
-# 静默模式（只输出 JSON）
-cbi repository file-detail 123 -q
-```
-
-输出信息包括：
-- 基本信息：ID、名称、格式、大小、时长、分辨率等
-- 来源信息：来源平台、来源 URL
-- 关联产品、标签、文件夹
-- 创建者信息
-- 各种 URL：封面、原始文件、预览
-
 ---
 
 ## 通用参数
@@ -317,7 +371,7 @@ cbi repository file-detail 123 -q
 | 格式 | 说明 | 适用场景 |
 |------|------|----------|
 | `table` | 表格格式（默认） | 人工查看 |
-| `json` | JSON 格式 | 程序处理 |
+| `json` | JSON 格式 | 程序处理、API 对接 |
 
 ---
 
@@ -330,21 +384,11 @@ cbi repository file-detail 123 -q
   "base_url": "https://open.creatibi.cn",
   "client_id": "YOUR_CLIENT_ID",
   "client_secret": "YOUR_CLIENT_SECRET",
-  "default_workspace": "",
   "api_key": "YOUR_ACCESS_TOKEN",
   "refresh_token": "YOUR_REFRESH_TOKEN",
   "token_expires_at": "2026-04-24T00:28:54Z"
 }
 ```
-
-配置说明：
-- `base_url`: API 基础地址
-- `client_id`: OAuth 应用 ID
-- `client_secret`: OAuth 应用密钥（登录凭证）
-- `default_workspace`: 默认 workspace（可选）
-- `api_key`: 登录后获取的 access_token
-- `refresh_token`: 用于刷新 access_token
-- `token_expires_at`: token 过期时间
 
 ---
 
@@ -355,21 +399,6 @@ make build      # 构建当前平台
 make build-all  # 跨平台编译（用于发布）
 make run        # 运行开发模式
 make test       # 运行测试
-make package    # 构建 + 打包 npm
-```
-
-### 发布新版本
-
-```bash
-# 1. 更新版本号
-# 编辑 package.json 中的 version 字段
-
-# 2. 构建并打包
-make build-all
-npm pack
-
-# 3. 发布到 npm（需要 npm 账号）
-npm publish --access restricted
 ```
 
 ---

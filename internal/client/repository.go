@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/tidwall/gjson"
@@ -314,6 +315,39 @@ func (c *RepositoryClient) CreateFile(ctx context.Context, req *CreateFileReques
 		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
 	}
 
+	// 检查 HTTP 状态码（nginx 可能返回 413 等错误）
+	if resp.StatusCode() == 413 {
+		return nil, cliErr.NewCLIError("FILE_TOO_LARGE",
+			"文件大小超过服务器限制（nginx 413），请尝试上传较小的文件或联系管理员调整服务器配置")
+	}
+	if resp.StatusCode() >= 400 {
+		// 尝试解析响应体中的错误信息
+		result := gjson.ParseBytes(resp.Body())
+		message := result.Get("message").String()
+		if message == "" {
+			// 如果无法解析为 JSON，检查是否是 HTML 错误页面
+			bodyStr := string(resp.Body())
+			if strings.Contains(bodyStr, "<html>") || strings.Contains(bodyStr, "<title>") {
+				// 提取标题中的错误信息
+				if strings.Contains(bodyStr, "413 Request Entity Too Large") {
+					return nil, cliErr.NewCLIError("FILE_TOO_LARGE",
+						"文件大小超过服务器限制（nginx 413），请尝试上传较小的文件或联系管理员调整服务器配置")
+				}
+				return nil, cliErr.NewCLIErrorWithDetail("HTTP_ERROR",
+					fmt.Sprintf("HTTP %d 错误", resp.StatusCode()), bodyStr)
+			}
+			return nil, cliErr.NewCLIError("HTTP_ERROR",
+				fmt.Sprintf("HTTP %d: %s", resp.StatusCode(), resp.Status()))
+		}
+		return nil, cliErr.NewCLIErrorWithDetail("HTTP_ERROR",
+			fmt.Sprintf("HTTP %d", resp.StatusCode()), message)
+	}
+
+	// verbose 模式打印完整响应
+	if os.Getenv("CBI_VERBOSE") == "true" {
+		fmt.Fprintf(os.Stderr, "API Response: %s\n", string(resp.Body()))
+	}
+
 	result := gjson.ParseBytes(resp.Body())
 
 	codeVal := result.Get("code").Int()
@@ -324,9 +358,25 @@ func (c *RepositoryClient) CreateFile(ctx context.Context, req *CreateFileReques
 	}
 
 	fileData := result.Get("data.file")
+	fileID := fileData.Get("id").Int()
+	fileName := fileData.Get("name").String()
+
+	// 验证返回的文件信息是否有效
+	if fileID == 0 {
+		// 检查是否有错误信息
+		message := result.Get("message").String()
+		if message != "" && message != "success" {
+			return nil, cliErr.NewCLIErrorWithDetail("FILE_CREATE_ERROR",
+				"文件创建失败", message)
+		}
+		// 打印完整响应便于调试
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_CREATE_ERROR",
+			"服务器返回无效的文件信息", string(resp.Body()))
+	}
+
 	return &FileCreateInfo{
-		ID:   fileData.Get("id").Int(),
-		Name: fileData.Get("name").String(),
+		ID:   fileID,
+		Name: fileName,
 	}, nil
 }
 
