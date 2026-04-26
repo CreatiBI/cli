@@ -687,18 +687,350 @@ var repositoryFileDetailCmd = &cobra.Command{
 	},
 }
 
+// repositoryFileNameUpdateCmd 更新文件名称
+var repositoryFileNameUpdateCmd = &cobra.Command{
+	Use:   "file-name-update",
+	Short: "更新文件名称",
+	Long: `更新素材文件的名称。
+
+示例：
+  cbi repository file-name-update --repository-id 1 --file-id 123 --name "新名称"`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileID, _ := cmd.Flags().GetInt64("file-id")
+		if fileID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
+			os.Exit(1)
+		}
+
+		name, _ := cmd.Flags().GetString("name")
+		if name == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --name")
+			os.Exit(1)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.UpdateFileName(ctx, &client.UpdateFileNameRequest{
+			RepositoryID: repositoryID,
+			FileID:       fileID,
+			Name:         name,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件名称更新成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", result.FileID)
+		fmt.Fprintf(cmd.OutOrStdout(), "  新名称: %s\n", result.Name)
+	},
+}
+
+// repositoryFileNotesUpdateCmd 更新文件备注
+var repositoryFileNotesUpdateCmd = &cobra.Command{
+	Use:   "file-notes-update",
+	Short: "更新文件备注",
+	Long: `更新素材文件的备注，空字符串表示清空备注。
+
+示例：
+  cbi repository file-notes-update --repository-id 1 --file-id 123 --notes "这是备注"
+  cbi repository file-notes-update --repository-id 1 --file-id 123 --notes ""  # 清空备注`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileID, _ := cmd.Flags().GetInt64("file-id")
+		if fileID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
+			os.Exit(1)
+		}
+
+		notes, _ := cmd.Flags().GetString("notes")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.UpdateFileNotes(ctx, &client.UpdateFileNotesRequest{
+			RepositoryID: repositoryID,
+			FileID:       fileID,
+			Notes:        notes,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件备注更新成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", result.FileID)
+		if result.Notes != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "  备注: %s\n", result.Notes)
+		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "  备注: (已清空)")
+		}
+	},
+}
+
+// repositoryFileScoreUpdateCmd 更新文件评分
+var repositoryFileScoreUpdateCmd = &cobra.Command{
+	Use:   "file-score-update",
+	Short: "更新文件评分",
+	Long: `更新素材文件的评分（1-5）。
+
+示例：
+  cbi repository file-score-update --repository-id 1 --file-id 123 --score 4`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileID, _ := cmd.Flags().GetInt64("file-id")
+		if fileID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
+			os.Exit(1)
+		}
+
+		score, _ := cmd.Flags().GetInt("score")
+		if score < 1 || score > 5 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 评分必须在 1-5 范围内")
+			os.Exit(1)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.UpdateFileScore(ctx, &client.UpdateFileScoreRequest{
+			RepositoryID: repositoryID,
+			FileID:       fileID,
+			Score:        score,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件评分更新成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", result.FileID)
+		fmt.Fprintf(cmd.OutOrStdout(), "  评分: %d\n", result.Score)
+	},
+}
+
+// repositoryProductListCmd 查询产品列表
+var repositoryProductListCmd = &cobra.Command{
+	Use:   "product-list",
+	Short: "查询档案库产品列表",
+	Long: `获取档案库中所有已关联的产品列表。
+
+示例：
+  cbi repository product-list --repository-id 1
+  cbi repository product-list --repository-id 1 --format json`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		products, err := repoClient.ListProducts(ctx, repositoryID)
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, products)
+			return
+		}
+
+		switch format {
+		case "json":
+			outputData(cmd, products)
+		default:
+			printProductListTable(cmd, products)
+		}
+	},
+}
+
+// repositoryFileProductAddCmd 给文件添加关联产品
+var repositoryFileProductAddCmd = &cobra.Command{
+	Use:   "file-product-add",
+	Short: "给文件添加关联产品",
+	Long: `给素材文件添加关联产品，支持批量添加。
+
+产品类型：
+  1 = 应用
+  2 = 游戏（默认）
+  3 = 商品
+
+业务逻辑：
+  - 根据产品名称在档案库中查找
+  - 存在同名产品 → 直接关联，isNew=false
+  - 不存在 → 创建新产品后关联，isNew=true
+  - 已关联的产品不会重复关联
+
+示例：
+  cbi repository file-product-add --repository-id 1 --file-id 123 --products "产品A,产品B"
+  cbi repository file-product-add --repository-id 1 --file-id 123 --products "产品A" --product-type 2`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileID, _ := cmd.Flags().GetInt64("file-id")
+		if fileID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
+			os.Exit(1)
+		}
+
+		productsStr, _ := cmd.Flags().GetString("products")
+		if productsStr == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --products")
+			os.Exit(1)
+		}
+
+		productType, _ := cmd.Flags().GetInt("product-type")
+		productURL, _ := cmd.Flags().GetString("product-url")
+		productImg, _ := cmd.Flags().GetString("product-img")
+		productDesc, _ := cmd.Flags().GetString("product-desc")
+
+		// 解析产品名称列表
+		productInputs := []client.ProductInput{}
+		for _, name := range strings.Split(productsStr, ",") {
+			name = strings.TrimSpace(name)
+			if name != "" {
+				p := client.ProductInput{
+					Name: name,
+					Type: productType,
+				}
+				if productURL != "" {
+					p.URL = productURL
+				}
+				if productImg != "" {
+					p.Img = productImg
+				}
+				if productDesc != "" {
+					p.Description = productDesc
+				}
+				productInputs = append(productInputs, p)
+			}
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.AddFileProducts(ctx, &client.AddFileProductsRequest{
+			RepositoryID: repositoryID,
+			FileID:       fileID,
+			Products:     productInputs,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 产品关联添加成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  成功关联数: %d\n", result.SuccessCount)
+		if len(result.Products) > 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "  产品列表:")
+			for _, p := range result.Products {
+				newStr := ""
+				if p.IsNew {
+					newStr = " (新创建)"
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "    - %s (ID: %d)%s\n", p.Name, p.ID, newStr)
+			}
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(repositoryCmd)
 	repositoryCmd.AddCommand(repositoryListCmd)
 	repositoryCmd.AddCommand(repositoryFoldersCmd)
 	repositoryCmd.AddCommand(repositoryFolderCreateCmd)
 	repositoryCmd.AddCommand(repositoryTagListCmd)
+	repositoryCmd.AddCommand(repositoryProductListCmd)
 	repositoryCmd.AddCommand(repositoryFileCheckCmd)
 	repositoryCmd.AddCommand(repositoryFileCreateCmd)
 	repositoryCmd.AddCommand(repositoryFileListCmd)
 	repositoryCmd.AddCommand(repositoryFileDetailCmd)
 	repositoryCmd.AddCommand(repositoryFileTagAddCmd)
 	repositoryCmd.AddCommand(repositoryFileFolderAddCmd)
+	repositoryCmd.AddCommand(repositoryFileNameUpdateCmd)
+	repositoryCmd.AddCommand(repositoryFileNotesUpdateCmd)
+	repositoryCmd.AddCommand(repositoryFileScoreUpdateCmd)
+	repositoryCmd.AddCommand(repositoryFileProductAddCmd)
 
 	// folders 命令参数
 	repositoryFoldersCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
@@ -714,6 +1046,9 @@ func init() {
 
 	// tag-list 命令参数
 	repositoryTagListCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+
+	// product-list 命令参数
+	repositoryProductListCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
 
 	// file-tag-add 命令参数
 	repositoryFileTagAddCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
@@ -748,6 +1083,30 @@ func init() {
 	repositoryFileListCmd.Flags().String("has-signals", "", "筛选有无信号（true/false）")
 	repositoryFileListCmd.Flags().Int("page", 1, "页码（默认 1）")
 	repositoryFileListCmd.Flags().Int("pageSize", 20, "每页条数（默认 20，最大 50）")
+
+	// file-name-update 命令参数
+	repositoryFileNameUpdateCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileNameUpdateCmd.Flags().Int64("file-id", 0, "文件 ID（必填）")
+	repositoryFileNameUpdateCmd.Flags().String("name", "", "新文件名称（必填）")
+
+	// file-notes-update 命令参数
+	repositoryFileNotesUpdateCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileNotesUpdateCmd.Flags().Int64("file-id", 0, "文件 ID（必填）")
+	repositoryFileNotesUpdateCmd.Flags().String("notes", "", "备注内容（空字符串表示清空）")
+
+	// file-score-update 命令参数
+	repositoryFileScoreUpdateCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileScoreUpdateCmd.Flags().Int64("file-id", 0, "文件 ID（必填）")
+	repositoryFileScoreUpdateCmd.Flags().Int("score", 0, "评分（1-5，必填）")
+
+	// file-product-add 命令参数
+	repositoryFileProductAddCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileProductAddCmd.Flags().Int64("file-id", 0, "文件 ID（必填）")
+	repositoryFileProductAddCmd.Flags().String("products", "", "产品名称列表（逗号分隔，必填）")
+	repositoryFileProductAddCmd.Flags().Int("product-type", 2, "产品类型（1=应用，2=游戏，3=商品）")
+	repositoryFileProductAddCmd.Flags().String("product-url", "", "产品 URL（可选，应用到所有产品）")
+	repositoryFileProductAddCmd.Flags().String("product-img", "", "产品图片 URL（可选，应用到所有产品）")
+	repositoryFileProductAddCmd.Flags().String("product-desc", "", "产品描述（可选，应用到所有产品）")
 }
 
 // calculateFileMD5 计算文件 MD5
@@ -977,6 +1336,32 @@ func printFileListTable(cmd *cobra.Command, result *client.FileListResult) {
 		}
 
 		t.AppendRow(fmt.Sprintf("%d", file.ID), file.Name, score, tagNames, createTime)
+	}
+
+	t.Render()
+}
+
+// printProductListTable 打印产品列表表格
+func printProductListTable(cmd *cobra.Command, products []client.Product) {
+	if len(products) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "无产品")
+		return
+	}
+
+	t := output.NewTableWriter(cmd.OutOrStdout())
+	t.AppendHeader("ID", "名称", "类型", "URL", "描述")
+
+	for _, p := range products {
+		typeStr := ""
+		switch p.Type {
+		case 1:
+			typeStr = "应用"
+		case 2:
+			typeStr = "游戏"
+		case 3:
+			typeStr = "商品"
+		}
+		t.AppendRow(fmt.Sprintf("%d", p.ID), p.Name, typeStr, p.URL, p.Description)
 	}
 
 	t.Render()
