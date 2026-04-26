@@ -18,6 +18,10 @@ trigger:
   - "repository file-notes-update"
   - "repository file-score-update"
   - "repository file-product-add"
+  - "repository file-tag-remove"
+  - "repository file-product-remove"
+  - "repository product-delete"
+  - "repository file-delete"
   - "文件查重"
   - "批量添加标签"
   - "批量添加文件夹"
@@ -26,6 +30,11 @@ trigger:
   - "修改文件评分"
   - "添加关联产品"
   - "关联产品"
+  - "移除标签"
+  - "移除关联产品"
+  - "删除产品"
+  - "删除文件"
+  - "移入回收站"
 depends_on:
   - cbi-shared
 ---
@@ -61,6 +70,10 @@ cbi auth login     # 登录授权
 | 批量添加标签 | `cbi repository file-tag-add --repository-id <id> --file-ids <ids> --tags "标签1,标签2"` |
 | 批量添加到文件夹 | `cbi repository file-folder-add --repository-id <id> --file-ids <ids> --folder-ids <ids>` |
 | 添加关联产品 | `cbi repository file-product-add --repository-id <id> --file-id <fid> --products "产品A,产品B"` |
+| 移除文件标签 | `cbi repository file-tag-remove --repository-id <id> --file-id <fid> --tag-ids <ids>` |
+| 移除关联产品 | `cbi repository file-product-remove --repository-id <id> --file-id <fid> --product-ids <ids>` |
+| 删除产品 | `cbi repository product-delete --repository-id <id> --product-ids <ids>` |
+| 删除文件到回收站 | `cbi repository file-delete --repository-id <id> --file-ids <ids>` |
 
 ---
 
@@ -360,6 +373,54 @@ cbi repository file-product-add --repository-id <id> --file-id 123 --products "�
 - 存在同名产品 → 直接关联已存在的产品
 - 不存在 → 创建新产品后关联
 - 已关联的产品不会重复关联（自动去重）
+
+### 移除文件标签
+
+```bash
+cbi repository file-tag-remove --repository-id <id> --file-id 123 --tag-ids 5,10
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-id`: 文件 ID（必填）
+- `--tag-ids`: 标签 ID 列表（逗号分隔，必填）
+
+### 移除文件关联产品
+
+```bash
+cbi repository file-product-remove --repository-id <id> --file-id 123 --product-ids 10,15
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-id`: 文件 ID（必填）
+- `--product-ids`: 产品 ID 列表（逗号分隔，必填）
+
+### 删除产品
+
+```bash
+cbi repository product-delete --repository-id <id> --product-ids 10,15,20
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--product-ids`: 产品 ID 列表（逗号分隔，必填）
+
+---
+
+## 文件删除
+
+### 删除文件到回收站
+
+```bash
+cbi repository file-delete --repository-id <id> --file-ids 123,124,125
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-ids`: 文件 ID 列表（逗号分隔，必填）
+
+**注意：** 文件删除后进入回收站，可在回收站恢复或彻底删除。
 
 ---
 

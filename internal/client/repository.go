@@ -62,34 +62,34 @@ type FileCreateInfo struct {
 
 // FileDetail 文件详情
 type FileDetail struct {
-	ID             int64          `json:"id"`
-	RepositoryID   int64          `json:"repositoryId"`
-	Name           string         `json:"name"`
-	FileType       int            `json:"fileType"`
-	Format         string         `json:"format"`
-	Cover          string         `json:"cover"`
-	FileOriginUrl  string         `json:"fileOriginUrl"`
-	FileViewUrl    string         `json:"fileViewUrl"`
-	Size           string         `json:"size"`
-	SizeInByte     int64          `json:"sizeInByte"`
-	Duration       string         `json:"duration"`
-	Resolution     string         `json:"resolution"`
-	Ratio          string         `json:"ratio"`
-	FrameRate      string         `json:"frameRate"`
-	Hash           string         `json:"hash"`
-	Score          int            `json:"score"`
-	Notes          string         `json:"notes"`
-	FileSourceUrl  string         `json:"fileSourceUrl"`
-	SourcePlatform string         `json:"sourcePlatform"`
-	Statistic      string         `json:"statistic"`
-	Extra          interface{}    `json:"extra"`
-	CreatedAt      int64          `json:"createdAt"`
-	UpdatedAt      int64          `json:"updatedAt"`
-	Products       []Product      `json:"products"`
-	Tags           []Tag          `json:"tags"`
-	Folders        []FolderInfo   `json:"folders"`
-	Creator        *CreatorInfo   `json:"creator"`
-	Signals        []Signal       `json:"signals"`
+	ID             int64        `json:"id"`
+	RepositoryID   int64        `json:"repositoryId"`
+	Name           string       `json:"name"`
+	FileType       int          `json:"fileType"`
+	Format         string       `json:"format"`
+	Cover          string       `json:"cover"`
+	FileOriginUrl  string       `json:"fileOriginUrl"`
+	FileViewUrl    string       `json:"fileViewUrl"`
+	Size           string       `json:"size"`
+	SizeInByte     int64        `json:"sizeInByte"`
+	Duration       string       `json:"duration"`
+	Resolution     string       `json:"resolution"`
+	Ratio          string       `json:"ratio"`
+	FrameRate      string       `json:"frameRate"`
+	Hash           string       `json:"hash"`
+	Score          int          `json:"score"`
+	Notes          string       `json:"notes"`
+	FileSourceUrl  string       `json:"fileSourceUrl"`
+	SourcePlatform string       `json:"sourcePlatform"`
+	Statistic      string       `json:"statistic"`
+	Extra          interface{}  `json:"extra"`
+	CreatedAt      int64        `json:"createdAt"`
+	UpdatedAt      int64        `json:"updatedAt"`
+	Products       []Product    `json:"products"`
+	Tags           []Tag        `json:"tags"`
+	Folders        []FolderInfo `json:"folders"`
+	Creator        *CreatorInfo `json:"creator"`
+	Signals        []Signal     `json:"signals"`
 }
 
 // Product 关联产品
@@ -99,7 +99,7 @@ type Product struct {
 	Img         string `json:"img"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
-	Type        int    `json:"type"` // 1=应用, 2=游戏, 3=商品
+	Type        int    `json:"type"`            // 1=应用, 2=游戏, 3=商品
 	IsNew       bool   `json:"isNew,omitempty"` // 添加产品时返回
 }
 
@@ -113,10 +113,10 @@ type Tag struct {
 
 // FolderInfo 文件夹信息（简化版）
 type FolderInfo struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Color  string `json:"color,omitempty"`
-	Icon   int    `json:"icon,omitempty"`
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color,omitempty"`
+	Icon  int    `json:"icon,omitempty"`
 }
 
 // CreatorInfo 创建者信息
@@ -351,8 +351,8 @@ type AddFileTagsRequest struct {
 
 // AddFileTagsResult 给文件添加标签结果
 type AddFileTagsResult struct {
-	SuccessCount int        `json:"successCount"` // 成功处理的文件数量
-	CreatedTags  []Tag      `json:"createdTags"`  // 本次新创建的标签
+	SuccessCount int   `json:"successCount"` // 成功处理的文件数量
+	CreatedTags  []Tag `json:"createdTags"`  // 本次新创建的标签
 }
 
 // AddFileTags 给素材文件添加标签
@@ -413,9 +413,9 @@ type AddFilesToFolderRequest struct {
 
 // AddFilesToFolderResult 将文件添加到文件夹结果
 type AddFilesToFolderResult struct {
-	SuccessCount      int `json:"successCount"`      // 新创建的关联数量
-	AddedFileCount    int `json:"addedFileCount"`    // 处理的文件数量
-	AddedFolderCount  int `json:"addedFolderCount"`  // 添加到的文件夹数量
+	SuccessCount     int `json:"successCount"`     // 新创建的关联数量
+	AddedFileCount   int `json:"addedFileCount"`   // 处理的文件数量
+	AddedFolderCount int `json:"addedFolderCount"` // 添加到的文件夹数量
 }
 
 // AddFilesToFolder 将素材文件添加到文件夹
@@ -624,7 +624,7 @@ type CreateFileRequest struct {
 	FilePath     string
 	Name         string
 	Note         string
-	Rating       int    // 0-5
+	Rating       int // 0-5
 	SourceURL    string
 	Tags         string // 逗号分隔
 }
@@ -649,7 +649,7 @@ type FileListResult struct {
 	Files    []FileListItem `json:"files"`
 	Total    int64          `json:"total"`
 	Page     int            `json:"page"`
-PageSize int            `json:"pageSize"`
+	PageSize int            `json:"pageSize"`
 }
 
 // ListFilesRequest 文件列表请求参数
@@ -660,7 +660,7 @@ type ListFilesRequest struct {
 	Keyword      string
 	HasSignals   *bool // nil = 不筛选, true = 有信号, false = 无信号
 	Page         int
-PageSize      int
+	PageSize     int
 }
 
 // ListFiles 获取素材库文件列表
@@ -875,304 +875,496 @@ func (c *RepositoryClient) GetFileDetail(ctx context.Context, fileID int64) (*Fi
 	})
 
 	return detail, nil
+}
+
+// UpdateFileNameRequest 更新文件名称请求
+type UpdateFileNameRequest struct {
+	RepositoryID int64
+	FileID       int64
+	Name         string
+}
+
+// UpdateFileNameResult 更新文件名称结果
+type UpdateFileNameResult struct {
+	FileID    int64  `json:"fileId"`
+	Name      string `json:"name"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
+// UpdateFileName 更新文件名称
+func (c *RepositoryClient) UpdateFileName(ctx context.Context, req *UpdateFileNameRequest) (*UpdateFileNameResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
 	}
 
-	// UpdateFileNameRequest 更新文件名称请求
-	type UpdateFileNameRequest struct {
-		RepositoryID int64
-		FileID       int64
-		Name         string
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileId":       req.FileID,
+			"name":         req.Name,
+		}).
+		Post("/openapi/v1/repository/file/name/update")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
 	}
 
-	// UpdateFileNameResult 更新文件名称结果
-	type UpdateFileNameResult struct {
-		FileID    int64  `json:"fileId"`
-		Name      string `json:"name"`
-		UpdatedAt int64  `json:"updatedAt"`
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_NAME_UPDATE_ERROR",
+			fmt.Sprintf("更新文件名称失败 (%d)", codeVal), message)
 	}
 
-	// UpdateFileName 更新文件名称
-	func (c *RepositoryClient) UpdateFileName(ctx context.Context, req *UpdateFileNameRequest) (*UpdateFileNameResult, error) {
-		accessToken := config.GetAPIKey()
-		if accessToken == "" {
-			return nil, cliErr.ErrAuthRequired
-		}
+	data := result.Get("data")
+	return &UpdateFileNameResult{
+		FileID:    data.Get("fileId").Int(),
+		Name:      data.Get("name").String(),
+		UpdatedAt: data.Get("updatedAt").Int(),
+	}, nil
+}
 
-		resp, err := c.client.R().
-			SetContext(ctx).
-			SetHeader("user-access-token", accessToken).
-			SetHeader("Content-Type", "application/json").
-			SetBody(map[string]interface{}{
-				"repositoryId": req.RepositoryID,
-				"fileId":       req.FileID,
-				"name":         req.Name,
-			}).
-			Post("/openapi/v1/repository/file/name/update")
+// UpdateFileNotesRequest 更新文件备注请求
+type UpdateFileNotesRequest struct {
+	RepositoryID int64
+	FileID       int64
+	Notes        string // 空字符串表示清空备注
+}
 
-		if err != nil {
-			return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
-		}
+// UpdateFileNotesResult 更新文件备注结果
+type UpdateFileNotesResult struct {
+	FileID    int64  `json:"fileId"`
+	Notes     string `json:"notes"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
 
-		result := gjson.ParseBytes(resp.Body())
-
-		codeVal := result.Get("code").Int()
-		if codeVal != 0 {
-			message := result.Get("message").String()
-			return nil, cliErr.NewCLIErrorWithDetail("FILE_NAME_UPDATE_ERROR",
-				fmt.Sprintf("更新文件名称失败 (%d)", codeVal), message)
-		}
-
-		data := result.Get("data")
-		return &UpdateFileNameResult{
-			FileID:    data.Get("fileId").Int(),
-			Name:      data.Get("name").String(),
-			UpdatedAt: data.Get("updatedAt").Int(),
-		}, nil
+// UpdateFileNotes 更新文件备注
+func (c *RepositoryClient) UpdateFileNotes(ctx context.Context, req *UpdateFileNotesRequest) (*UpdateFileNotesResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
 	}
 
-	// UpdateFileNotesRequest 更新文件备注请求
-	type UpdateFileNotesRequest struct {
-		RepositoryID int64
-		FileID       int64
-		Notes        string // 空字符串表示清空备注
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileId":       req.FileID,
+			"notes":        req.Notes,
+		}).
+		Post("/openapi/v1/repository/file/notes/update")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
 	}
 
-	// UpdateFileNotesResult 更新文件备注结果
-	type UpdateFileNotesResult struct {
-		FileID    int64  `json:"fileId"`
-		Notes     string `json:"notes"`
-		UpdatedAt int64  `json:"updatedAt"`
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_NOTES_UPDATE_ERROR",
+			fmt.Sprintf("更新文件备注失败 (%d)", codeVal), message)
 	}
 
-	// UpdateFileNotes 更新文件备注
-	func (c *RepositoryClient) UpdateFileNotes(ctx context.Context, req *UpdateFileNotesRequest) (*UpdateFileNotesResult, error) {
-		accessToken := config.GetAPIKey()
-		if accessToken == "" {
-			return nil, cliErr.ErrAuthRequired
-		}
+	data := result.Get("data")
+	return &UpdateFileNotesResult{
+		FileID:    data.Get("fileId").Int(),
+		Notes:     data.Get("notes").String(),
+		UpdatedAt: data.Get("updatedAt").Int(),
+	}, nil
+}
 
-		resp, err := c.client.R().
-			SetContext(ctx).
-			SetHeader("user-access-token", accessToken).
-			SetHeader("Content-Type", "application/json").
-			SetBody(map[string]interface{}{
-				"repositoryId": req.RepositoryID,
-				"fileId":       req.FileID,
-				"notes":        req.Notes,
-			}).
-			Post("/openapi/v1/repository/file/notes/update")
+// UpdateFileScoreRequest 更新文件评分请求
+type UpdateFileScoreRequest struct {
+	RepositoryID int64
+	FileID       int64
+	Score        int // 1-5
+}
 
-		if err != nil {
-			return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
-		}
+// UpdateFileScoreResult 更新文件评分结果
+type UpdateFileScoreResult struct {
+	FileID    int64 `json:"fileId"`
+	Score     int   `json:"score"`
+	UpdatedAt int64 `json:"updatedAt"`
+}
 
-		result := gjson.ParseBytes(resp.Body())
-
-		codeVal := result.Get("code").Int()
-		if codeVal != 0 {
-			message := result.Get("message").String()
-			return nil, cliErr.NewCLIErrorWithDetail("FILE_NOTES_UPDATE_ERROR",
-				fmt.Sprintf("更新文件备注失败 (%d)", codeVal), message)
-		}
-
-		data := result.Get("data")
-		return &UpdateFileNotesResult{
-			FileID:    data.Get("fileId").Int(),
-			Notes:     data.Get("notes").String(),
-			UpdatedAt: data.Get("updatedAt").Int(),
-		}, nil
+// UpdateFileScore 更新文件评分
+func (c *RepositoryClient) UpdateFileScore(ctx context.Context, req *UpdateFileScoreRequest) (*UpdateFileScoreResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
 	}
 
-	// UpdateFileScoreRequest 更新文件评分请求
-	type UpdateFileScoreRequest struct {
-		RepositoryID int64
-		FileID       int64
-		Score        int // 1-5
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileId":       req.FileID,
+			"score":        req.Score,
+		}).
+		Post("/openapi/v1/repository/file/score/update")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
 	}
 
-	// UpdateFileScoreResult 更新文件评分结果
-	type UpdateFileScoreResult struct {
-		FileID    int64 `json:"fileId"`
-		Score     int   `json:"score"`
-		UpdatedAt int64 `json:"updatedAt"`
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_SCORE_UPDATE_ERROR",
+			fmt.Sprintf("更新文件评分失败 (%d)", codeVal), message)
 	}
 
-	// UpdateFileScore 更新文件评分
-	func (c *RepositoryClient) UpdateFileScore(ctx context.Context, req *UpdateFileScoreRequest) (*UpdateFileScoreResult, error) {
-		accessToken := config.GetAPIKey()
-		if accessToken == "" {
-			return nil, cliErr.ErrAuthRequired
-		}
+	data := result.Get("data")
+	return &UpdateFileScoreResult{
+		FileID:    data.Get("fileId").Int(),
+		Score:     int(data.Get("score").Int()),
+		UpdatedAt: data.Get("updatedAt").Int(),
+	}, nil
+}
 
-		resp, err := c.client.R().
-			SetContext(ctx).
-			SetHeader("user-access-token", accessToken).
-			SetHeader("Content-Type", "application/json").
-			SetBody(map[string]interface{}{
-				"repositoryId": req.RepositoryID,
-				"fileId":       req.FileID,
-				"score":        req.Score,
-			}).
-			Post("/openapi/v1/repository/file/score/update")
-
-		if err != nil {
-			return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
-		}
-
-		result := gjson.ParseBytes(resp.Body())
-
-		codeVal := result.Get("code").Int()
-		if codeVal != 0 {
-			message := result.Get("message").String()
-			return nil, cliErr.NewCLIErrorWithDetail("FILE_SCORE_UPDATE_ERROR",
-				fmt.Sprintf("更新文件评分失败 (%d)", codeVal), message)
-		}
-
-		data := result.Get("data")
-		return &UpdateFileScoreResult{
-			FileID:    data.Get("fileId").Int(),
-			Score:     int(data.Get("score").Int()),
-			UpdatedAt: data.Get("updatedAt").Int(),
-		}, nil
+// ListProducts 获取档案库产品列表
+func (c *RepositoryClient) ListProducts(ctx context.Context, repositoryID int64) ([]Product, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
 	}
 
-	// ListProducts 获取档案库产品列表
-	func (c *RepositoryClient) ListProducts(ctx context.Context, repositoryID int64) ([]Product, error) {
-		accessToken := config.GetAPIKey()
-		if accessToken == "" {
-			return nil, cliErr.ErrAuthRequired
-		}
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": repositoryID,
+		}).
+		Post("/openapi/v1/repository/product/list")
 
-		resp, err := c.client.R().
-			SetContext(ctx).
-			SetHeader("user-access-token", accessToken).
-			SetHeader("Content-Type", "application/json").
-			SetBody(map[string]interface{}{
-				"repositoryId": repositoryID,
-			}).
-			Post("/openapi/v1/repository/product/list")
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
 
-		if err != nil {
-			return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
-		}
+	result := gjson.ParseBytes(resp.Body())
 
-		result := gjson.ParseBytes(resp.Body())
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PRODUCT_LIST_ERROR",
+			fmt.Sprintf("获取产品列表失败 (%d)", codeVal), message)
+	}
 
-		codeVal := result.Get("code").Int()
-		if codeVal != 0 {
-			message := result.Get("message").String()
-			return nil, cliErr.NewCLIErrorWithDetail("PRODUCT_LIST_ERROR",
-				fmt.Sprintf("获取产品列表失败 (%d)", codeVal), message)
-		}
-
-		products := []Product{}
-		result.Get("data.products").ForEach(func(_, value gjson.Result) bool {
-			products = append(products, Product{
-				ID:          value.Get("id").Int(),
-				Name:        value.Get("name").String(),
-				Img:         value.Get("img").String(),
-				URL:         value.Get("url").String(),
-				Description: value.Get("description").String(),
-				Type:        int(value.Get("type").Int()),
-			})
-			return true
+	products := []Product{}
+	result.Get("data.products").ForEach(func(_, value gjson.Result) bool {
+		products = append(products, Product{
+			ID:          value.Get("id").Int(),
+			Name:        value.Get("name").String(),
+			Img:         value.Get("img").String(),
+			URL:         value.Get("url").String(),
+			Description: value.Get("description").String(),
+			Type:        int(value.Get("type").Int()),
 		})
+		return true
+	})
 
-		return products, nil
+	return products, nil
+}
+
+// ProductInput 添加产品输入
+type ProductInput struct {
+	Name        string
+	Img         string // 可选
+	URL         string // 可选
+	Description string // 可选
+	Type        int    // 可选，默认 2（游戏）
+}
+
+// AddFileProductsRequest 给文件添加关联产品请求
+type AddFileProductsRequest struct {
+	RepositoryID int64
+	FileID       int64
+	Products     []ProductInput
+}
+
+// AddFileProductsResult 给文件添加关联产品结果
+type AddFileProductsResult struct {
+	SuccessCount int       `json:"successCount"`
+	Products     []Product `json:"products"`
+}
+
+// AddFileProducts 给文件添加关联产品
+func (c *RepositoryClient) AddFileProducts(ctx context.Context, req *AddFileProductsRequest) (*AddFileProductsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
 	}
 
-	// ProductInput 添加产品输入
-	type ProductInput struct {
-		Name        string
-		Img         string // 可选
-		URL         string // 可选
-		Description string // 可选
-		Type        int    // 可选，默认 2（游戏）
+	// 构建 products 数组
+	products := []map[string]interface{}{}
+	for _, p := range req.Products {
+		product := map[string]interface{}{
+			"name": p.Name,
+		}
+		if p.Img != "" {
+			product["img"] = p.Img
+		}
+		if p.URL != "" {
+			product["url"] = p.URL
+		}
+		if p.Description != "" {
+			product["description"] = p.Description
+		}
+		if p.Type > 0 {
+			product["type"] = p.Type
+		} else {
+			product["type"] = 2 // 默认游戏
+		}
+		products = append(products, product)
 	}
 
-	// AddFileProductsRequest 给文件添加关联产品请求
-	type AddFileProductsRequest struct {
-		RepositoryID int64
-		FileID       int64
-		Products     []ProductInput
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileId":       req.FileID,
+			"products":     products,
+		}).
+		Post("/openapi/v1/repository/file/product/add")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
 	}
 
-	// AddFileProductsResult 给文件添加关联产品结果
-	type AddFileProductsResult struct {
-		SuccessCount int       `json:"successCount"`
-		Products     []Product `json:"products"`
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_PRODUCT_ADD_ERROR",
+			fmt.Sprintf("添加关联产品失败 (%d)", codeVal), message)
 	}
 
-	// AddFileProducts 给文件添加关联产品
-	func (c *RepositoryClient) AddFileProducts(ctx context.Context, req *AddFileProductsRequest) (*AddFileProductsResult, error) {
-		accessToken := config.GetAPIKey()
-		if accessToken == "" {
-			return nil, cliErr.ErrAuthRequired
-		}
+	data := result.Get("data")
+	productsResult := &AddFileProductsResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}
 
-		// 构建 products 数组
-		products := []map[string]interface{}{}
-		for _, p := range req.Products {
-			product := map[string]interface{}{
-				"name": p.Name,
-			}
-			if p.Img != "" {
-				product["img"] = p.Img
-			}
-			if p.URL != "" {
-				product["url"] = p.URL
-			}
-			if p.Description != "" {
-				product["description"] = p.Description
-			}
-			if p.Type > 0 {
-				product["type"] = p.Type
-			} else {
-				product["type"] = 2 // 默认游戏
-			}
-			products = append(products, product)
-		}
-
-		resp, err := c.client.R().
-			SetContext(ctx).
-			SetHeader("user-access-token", accessToken).
-			SetHeader("Content-Type", "application/json").
-			SetBody(map[string]interface{}{
-				"repositoryId": req.RepositoryID,
-				"fileId":       req.FileID,
-				"products":     products,
-			}).
-			Post("/openapi/v1/repository/file/product/add")
-
-		if err != nil {
-			return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
-		}
-
-		result := gjson.ParseBytes(resp.Body())
-
-		codeVal := result.Get("code").Int()
-		if codeVal != 0 {
-			message := result.Get("message").String()
-			return nil, cliErr.NewCLIErrorWithDetail("FILE_PRODUCT_ADD_ERROR",
-				fmt.Sprintf("添加关联产品失败 (%d)", codeVal), message)
-		}
-
-		data := result.Get("data")
-		productsResult := &AddFileProductsResult{
-			SuccessCount: int(data.Get("successCount").Int()),
-		}
-
-		// 解析返回的产品列表
-		data.Get("products").ForEach(func(_, value gjson.Result) bool {
-			productsResult.Products = append(productsResult.Products, Product{
-				ID:          value.Get("id").Int(),
-				Name:        value.Get("name").String(),
-				Img:         value.Get("img").String(),
-				URL:         value.Get("url").String(),
-				IsNew:       value.Get("isNew").Bool(),
-			})
-			return true
+	// 解析返回的产品列表
+	data.Get("products").ForEach(func(_, value gjson.Result) bool {
+		productsResult.Products = append(productsResult.Products, Product{
+			ID:    value.Get("id").Int(),
+			Name:  value.Get("name").String(),
+			Img:   value.Get("img").String(),
+			URL:   value.Get("url").String(),
+			IsNew: value.Get("isNew").Bool(),
 		})
+		return true
+	})
 
-		return productsResult, nil
+	return productsResult, nil
+}
+
+// RemoveFileTagsRequest 移除文件标签请求
+type RemoveFileTagsRequest struct {
+	RepositoryID int64
+	FileID       int64
+	TagIDs       []int64
+}
+
+// RemoveFileTagsResult 移除文件标签结果
+type RemoveFileTagsResult struct {
+	SuccessCount int `json:"successCount"`
+}
+
+// RemoveFileTags 移除文件的标签
+func (c *RepositoryClient) RemoveFileTags(ctx context.Context, req *RemoveFileTagsRequest) (*RemoveFileTagsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
 	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileId":       req.FileID,
+			"tagIds":       req.TagIDs,
+		}).
+		Post("/openapi/v1/repository/file/tag/remove")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_TAG_REMOVE_ERROR",
+			fmt.Sprintf("移除标签失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &RemoveFileTagsResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}, nil
+}
+
+// RemoveFileProductsRequest 移除文件关联产品请求
+type RemoveFileProductsRequest struct {
+	RepositoryID int64
+	FileID       int64
+	ProductIDs   []int64
+}
+
+// RemoveFileProductsResult 移除文件关联产品结果
+type RemoveFileProductsResult struct {
+	SuccessCount int `json:"successCount"`
+}
+
+// RemoveFileProducts 移除文件的关联产品
+func (c *RepositoryClient) RemoveFileProducts(ctx context.Context, req *RemoveFileProductsRequest) (*RemoveFileProductsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileId":       req.FileID,
+			"productIds":   req.ProductIDs,
+		}).
+		Post("/openapi/v1/repository/file/product/remove")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_PRODUCT_REMOVE_ERROR",
+			fmt.Sprintf("移除关联产品失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &RemoveFileProductsResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}, nil
+}
+
+// DeleteProductsRequest 删除产品请求
+type DeleteProductsRequest struct {
+	RepositoryID int64
+	ProductIDs   []int64
+}
+
+// DeleteProductsResult 删除产品结果
+type DeleteProductsResult struct {
+	SuccessCount int `json:"successCount"`
+}
+
+// DeleteProducts 删除产品
+func (c *RepositoryClient) DeleteProducts(ctx context.Context, req *DeleteProductsRequest) (*DeleteProductsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"productIds":   req.ProductIDs,
+		}).
+		Post("/openapi/v1/repository/product/delete")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PRODUCT_DELETE_ERROR",
+			fmt.Sprintf("删除产品失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &DeleteProductsResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}, nil
+}
+
+// DeleteFilesRequest 删除文件请求
+type DeleteFilesRequest struct {
+	RepositoryID int64
+	FileIDs      []int64
+}
+
+// DeleteFilesResult 删除文件结果
+type DeleteFilesResult struct {
+	SuccessCount int `json:"successCount"`
+}
+
+// DeleteFiles 删除文件到回收站
+func (c *RepositoryClient) DeleteFiles(ctx context.Context, req *DeleteFilesRequest) (*DeleteFilesResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"fileIds":      req.FileIDs,
+		}).
+		Post("/openapi/v1/repository/file/delete")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FILE_DELETE_ERROR",
+			fmt.Sprintf("删除文件失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &DeleteFilesResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}, nil
+}

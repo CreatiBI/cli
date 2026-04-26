@@ -1014,6 +1014,264 @@ var repositoryFileProductAddCmd = &cobra.Command{
 	},
 }
 
+// repositoryFileTagRemoveCmd 移除文件标签
+var repositoryFileTagRemoveCmd = &cobra.Command{
+	Use:   "file-tag-remove",
+	Short: "移除文件的标签",
+	Long: `移除素材文件的标签。
+
+示例：
+  cbi repository file-tag-remove --repository-id 1 --file-id 123 --tag-ids 5,10`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileID, _ := cmd.Flags().GetInt64("file-id")
+		if fileID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
+			os.Exit(1)
+		}
+
+		tagIDsStr, _ := cmd.Flags().GetString("tag-ids")
+		if tagIDsStr == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --tag-ids")
+			os.Exit(1)
+		}
+
+		// 解析 tag-ids
+		tagIDs := []int64{}
+		for _, idStr := range strings.Split(tagIDsStr, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的标签 ID - %s\n", idStr)
+				os.Exit(1)
+			}
+			tagIDs = append(tagIDs, id)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.RemoveFileTags(ctx, &client.RemoveFileTagsRequest{
+			RepositoryID: repositoryID,
+			FileID:       fileID,
+			TagIDs:       tagIDs,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 标签移除成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  移除数量: %d\n", result.SuccessCount)
+	},
+}
+
+// repositoryFileProductRemoveCmd 移除文件关联产品
+var repositoryFileProductRemoveCmd = &cobra.Command{
+	Use:   "file-product-remove",
+	Short: "移除文件的关联产品",
+	Long: `移除素材文件的关联产品。
+
+示例：
+  cbi repository file-product-remove --repository-id 1 --file-id 123 --product-ids 10,15`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileID, _ := cmd.Flags().GetInt64("file-id")
+		if fileID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
+			os.Exit(1)
+		}
+
+		productIDsStr, _ := cmd.Flags().GetString("product-ids")
+		if productIDsStr == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --product-ids")
+			os.Exit(1)
+		}
+
+		// 解析 product-ids
+		productIDs := []int64{}
+		for _, idStr := range strings.Split(productIDsStr, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的产品 ID - %s\n", idStr)
+				os.Exit(1)
+			}
+			productIDs = append(productIDs, id)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.RemoveFileProducts(ctx, &client.RemoveFileProductsRequest{
+			RepositoryID: repositoryID,
+			FileID:       fileID,
+			ProductIDs:   productIDs,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 关联产品移除成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  移除数量: %d\n", result.SuccessCount)
+	},
+}
+
+// repositoryProductDeleteCmd 删除产品
+var repositoryProductDeleteCmd = &cobra.Command{
+	Use:   "product-delete",
+	Short: "删除产品",
+	Long: `删除档案库中的产品。
+
+示例：
+  cbi repository product-delete --repository-id 1 --product-ids 10,15,20`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		productIDsStr, _ := cmd.Flags().GetString("product-ids")
+		if productIDsStr == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --product-ids")
+			os.Exit(1)
+		}
+
+		// 解析 product-ids
+		productIDs := []int64{}
+		for _, idStr := range strings.Split(productIDsStr, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的产品 ID - %s\n", idStr)
+				os.Exit(1)
+			}
+			productIDs = append(productIDs, id)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.DeleteProducts(ctx, &client.DeleteProductsRequest{
+			RepositoryID: repositoryID,
+			ProductIDs:   productIDs,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 产品删除成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  删除数量: %d\n", result.SuccessCount)
+	},
+}
+
+// repositoryFileDeleteCmd 删除文件到回收站
+var repositoryFileDeleteCmd = &cobra.Command{
+	Use:   "file-delete",
+	Short: "删除文件到回收站",
+	Long: `将素材文件移入回收站。
+
+示例：
+  cbi repository file-delete --repository-id 1 --file-ids 123,124,125`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		fileIDsStr, _ := cmd.Flags().GetString("file-ids")
+		if fileIDsStr == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-ids")
+			os.Exit(1)
+		}
+
+		// 解析 file-ids
+		fileIDs := []int64{}
+		for _, idStr := range strings.Split(fileIDsStr, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的文件 ID - %s\n", idStr)
+				os.Exit(1)
+			}
+			fileIDs = append(fileIDs, id)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.DeleteFiles(ctx, &client.DeleteFilesRequest{
+			RepositoryID: repositoryID,
+			FileIDs:      fileIDs,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件已移入回收站")
+		fmt.Fprintf(cmd.OutOrStdout(), "  删除数量: %d\n", result.SuccessCount)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(repositoryCmd)
 	repositoryCmd.AddCommand(repositoryListCmd)
@@ -1031,6 +1289,10 @@ func init() {
 	repositoryCmd.AddCommand(repositoryFileNotesUpdateCmd)
 	repositoryCmd.AddCommand(repositoryFileScoreUpdateCmd)
 	repositoryCmd.AddCommand(repositoryFileProductAddCmd)
+	repositoryCmd.AddCommand(repositoryFileTagRemoveCmd)
+	repositoryCmd.AddCommand(repositoryFileProductRemoveCmd)
+	repositoryCmd.AddCommand(repositoryProductDeleteCmd)
+	repositoryCmd.AddCommand(repositoryFileDeleteCmd)
 
 	// folders 命令参数
 	repositoryFoldersCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
@@ -1107,6 +1369,24 @@ func init() {
 	repositoryFileProductAddCmd.Flags().String("product-url", "", "产品 URL（可选，应用到所有产品）")
 	repositoryFileProductAddCmd.Flags().String("product-img", "", "产品图片 URL（可选，应用到所有产品）")
 	repositoryFileProductAddCmd.Flags().String("product-desc", "", "产品描述（可选，应用到所有产品）")
+
+	// file-tag-remove 命令参数
+	repositoryFileTagRemoveCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileTagRemoveCmd.Flags().Int64("file-id", 0, "文件 ID（必填）")
+	repositoryFileTagRemoveCmd.Flags().String("tag-ids", "", "标签 ID 列表（逗号分隔，必填）")
+
+	// file-product-remove 命令参数
+	repositoryFileProductRemoveCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileProductRemoveCmd.Flags().Int64("file-id", 0, "文件 ID（必填）")
+	repositoryFileProductRemoveCmd.Flags().String("product-ids", "", "产品 ID 列表（逗号分隔，必填）")
+
+	// product-delete 命令参数
+	repositoryProductDeleteCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryProductDeleteCmd.Flags().String("product-ids", "", "产品 ID 列表（逗号分隔，必填）")
+
+	// file-delete 命令参数
+	repositoryFileDeleteCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryFileDeleteCmd.Flags().String("file-ids", "", "文件 ID 列表（逗号分隔，必填）")
 }
 
 // calculateFileMD5 计算文件 MD5
@@ -1306,7 +1586,7 @@ func printFileListTable(cmd *cobra.Command, result *client.FileListResult) {
 	}
 
 	totalPages := result.Total / int64(result.PageSize)
-	if result.Total % int64(result.PageSize) > 0 {
+	if result.Total%int64(result.PageSize) > 0 {
 		totalPages++
 	}
 	fmt.Fprintf(out, "共 %d 条，第 %d/%d 页\n\n", result.Total, result.Page, totalPages)
