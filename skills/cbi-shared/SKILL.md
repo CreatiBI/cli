@@ -25,11 +25,8 @@ CreatiBI 命令行工具的初始化与认证模块。
 ## 安装
 
 ```bash
-# npm 安装（推荐）
+# npm 全局安装
 npm install -g @creatibi/cbi-cli@latest
-
-# 或使用 npx（无需安装）
-npx @creatibi/cbi-cli --help
 ```
 
 支持平台：macOS (amd64/arm64)、Linux (amd64/arm64)、Windows (amd64/arm64)
