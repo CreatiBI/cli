@@ -1368,3 +1368,50 @@ func (c *RepositoryClient) DeleteFiles(ctx context.Context, req *DeleteFilesRequ
 		SuccessCount: int(data.Get("successCount").Int()),
 	}, nil
 }
+
+// DeleteTagsRequest 删除档案库标签请求
+type DeleteTagsRequest struct {
+	RepositoryID int64
+	TagIDs       []int64
+}
+
+// DeleteTagsResult 删除档案库标签结果
+type DeleteTagsResult struct {
+	SuccessCount int `json:"successCount"`
+}
+
+// DeleteTags 删除档案库标签（软删除）
+func (c *RepositoryClient) DeleteTags(ctx context.Context, req *DeleteTagsRequest) (*DeleteTagsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"repositoryId": req.RepositoryID,
+			"tagIds":       req.TagIDs,
+		}).
+		Post("/openapi/v1/repository/tag/delete")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("TAG_DELETE_ERROR",
+			fmt.Sprintf("删除标签失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &DeleteTagsResult{
+		SuccessCount: int(data.Get("successCount").Int()),
+	}, nil
+}

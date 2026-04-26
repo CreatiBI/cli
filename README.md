@@ -88,6 +88,7 @@ cbi
     ├── folders               # 文件夹列表
     ├── folder-create         # 创建文件夹
     ├── tag-list              # 标签列表
+    ├── tag-delete             # 删除标签
     ├── product-list          # 产品列表
     ├── product-delete        # 删除产品
     ├── file-list             # 文件列表（支持筛选）
@@ -251,6 +252,21 @@ cbi repository tag-list --repository-id 1 --format json
 参数：
 - `--repository-id`: 材库 ID（必填）
 - `--with-refcnt`: 包含标签使用次数
+
+### 删除标签
+
+```bash
+cbi repository tag-delete --repository-id 1 --tag-ids 5,10,15
+```
+
+参数：
+- `--repository-id`: 素材库 ID（必填）
+- `--tag-ids`: 标签 ID 列表（逗号分隔，必填）
+
+注意：
+- 删除后标签不再可用（软删除）
+- 已关联的文件标签记录保留
+- 需要档案库编辑权限
 
 ### 列出产品
 

@@ -13,6 +13,7 @@ trigger:
   - "repository file-detail"
   - "repository folder-create"
   - "repository tag-list"
+  - "repository tag-delete"
   - "repository product-list"
   - "repository file-name-update"
   - "repository file-notes-update"
@@ -34,6 +35,7 @@ trigger:
   - "移除关联产品"
   - "删除产品"
   - "删除文件"
+  - "删除标签"
   - "移入回收站"
 depends_on:
   - cbi-shared
@@ -63,6 +65,7 @@ cbi auth login     # 登录授权
 | 文件夹列表 | `cbi repository folders --repository-id <id>` |
 | 创建文件夹 | `cbi repository folder-create --repository-id <id> --name "名称"` |
 | 标签列表 | `cbi repository tag-list --repository-id <id>` |
+| 删除标签 | `cbi repository tag-delete --repository-id <id> --tag-ids <ids>` |
 | 产品列表 | `cbi repository product-list --repository-id <id>` |
 | 修改文件名称 | `cbi repository file-name-update --repository-id <id> --file-id <fid> --name "新名称"` |
 | 修改文件备注 | `cbi repository file-notes-update --repository-id <id> --file-id <fid> --notes "备注"` |
@@ -137,6 +140,22 @@ cbi repository tag-list --repository-id <id> --format json
 **参数：**
 - `--repository-id`: 素材库 ID（必填）
 - `--with-refcnt`: 包含标签使用次数
+
+### 删除标签
+
+```bash
+# 删除档案库标签（软删除）
+cbi repository tag-delete --repository-id <id> --tag-ids 5,10,15
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--tag-ids`: 标签 ID 列表（逗号分隔，必填）
+
+**注意：**
+- 删除后标签不再可用（软删除）
+- 已关联的文件标签记录保留
+- 需要档案库编辑权限
 
 ---
 

@@ -1272,6 +1272,70 @@ var repositoryFileDeleteCmd = &cobra.Command{
 	},
 }
 
+// repositoryTagDeleteCmd 删除档案库标签
+var repositoryTagDeleteCmd = &cobra.Command{
+	Use:   "tag-delete",
+	Short: "删除档案库标签",
+	Long: `删除档案库中的标签（软删除）。
+
+删除后标签不再可用，但已关联的文件标签记录保留。
+需要档案库编辑权限。
+
+示例：
+  cbi repository tag-delete --repository-id 1 --tag-ids 5,10,15`,
+	Args: cobra.NoArgs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if !config.IsLoggedIn() {
+			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
+			os.Exit(1)
+		}
+
+		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
+		if repositoryID == 0 {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
+			os.Exit(1)
+		}
+
+		tagIDsStr, _ := cmd.Flags().GetString("tag-ids")
+		if tagIDsStr == "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --tag-ids")
+			os.Exit(1)
+		}
+
+		// 解析 tag-ids
+		tagIDs := []int64{}
+		for _, idStr := range strings.Split(tagIDsStr, ",") {
+			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的标签 ID - %s\n", idStr)
+				os.Exit(1)
+			}
+			tagIDs = append(tagIDs, id)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.DeleteTags(ctx, &client.DeleteTagsRequest{
+			RepositoryID: repositoryID,
+			TagIDs:       tagIDs,
+		})
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			os.Exit(1)
+		}
+
+		if quiet {
+			outputData(cmd, result)
+			return
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 标签删除成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  删除数量: %d\n", result.SuccessCount)
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(repositoryCmd)
 	repositoryCmd.AddCommand(repositoryListCmd)
@@ -1293,6 +1357,7 @@ func init() {
 	repositoryCmd.AddCommand(repositoryFileProductRemoveCmd)
 	repositoryCmd.AddCommand(repositoryProductDeleteCmd)
 	repositoryCmd.AddCommand(repositoryFileDeleteCmd)
+	repositoryCmd.AddCommand(repositoryTagDeleteCmd)
 
 	// folders 命令参数
 	repositoryFoldersCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
@@ -1387,6 +1452,10 @@ func init() {
 	// file-delete 命令参数
 	repositoryFileDeleteCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
 	repositoryFileDeleteCmd.Flags().String("file-ids", "", "文件 ID 列表（逗号分隔，必填）")
+
+	// tag-delete 命令参数
+	repositoryTagDeleteCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryTagDeleteCmd.Flags().String("tag-ids", "", "标签 ID 列表（逗号分隔，必填）")
 }
 
 // calculateFileMD5 计算文件 MD5
