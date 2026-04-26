@@ -13,9 +13,19 @@ trigger:
   - "repository file-detail"
   - "repository folder-create"
   - "repository tag-list"
+  - "repository product-list"
+  - "repository file-name-update"
+  - "repository file-notes-update"
+  - "repository file-score-update"
+  - "repository file-product-add"
   - "文件查重"
   - "批量添加标签"
   - "批量添加文件夹"
+  - "修改文件名称"
+  - "修改文件备注"
+  - "修改文件评分"
+  - "添加关联产品"
+  - "关联产品"
 depends_on:
   - cbi-shared
 ---
@@ -44,8 +54,13 @@ cbi auth login     # 登录授权
 | 文件夹列表 | `cbi repository folders --repository-id <id>` |
 | 创建文件夹 | `cbi repository folder-create --repository-id <id> --name "名称"` |
 | 标签列表 | `cbi repository tag-list --repository-id <id>` |
-| 批量添加标签 | `cbi repository file-tag-add --repository-id <id> --file-ids <ids> --tag-ids <ids>` |
-| 批量添加到文件夹 | `cbi repository file-folder-add --repository-id <id> --file-ids <ids> --folder-id <id>` |
+| 产品列表 | `cbi repository product-list --repository-id <id>` |
+| 修改文件名称 | `cbi repository file-name-update --repository-id <id> --file-id <fid> --name "新名称"` |
+| 修改文件备注 | `cbi repository file-notes-update --repository-id <id> --file-id <fid> --notes "备注"` |
+| 修改文件评分 | `cbi repository file-score-update --repository-id <id> --file-id <fid> --score 4` |
+| 批量添加标签 | `cbi repository file-tag-add --repository-id <id> --file-ids <ids> --tags "标签1,标签2"` |
+| 批量添加到文件夹 | `cbi repository file-folder-add --repository-id <id> --file-ids <ids> --folder-ids <ids>` |
+| 添加关联产品 | `cbi repository file-product-add --repository-id <id> --file-id <fid> --products "产品A,产品B"` |
 
 ---
 
@@ -254,6 +269,97 @@ cbi repository file-folder-add --repository-id <id> --file-ids 123,456 --folder-
 - `--repository-id`: 素材库 ID（必填）
 - `--file-ids`: 文件 ID 列表（逗号分隔，必填）
 - `--folder-id`: 目标文件夹 ID（必填）
+
+---
+
+## 文件属性修改
+
+### 修改文件名称
+
+```bash
+cbi repository file-name-update --repository-id <id> --file-id 123 --name "新文件名称"
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-id`: 文件 ID（必填）
+- `--name`: 新文件名称（必填）
+
+### 修改文件备注
+
+```bash
+# 设置备注
+cbi repository file-notes-update --repository-id <id> --file-id 123 --notes "这是备注内容"
+
+# 清空备注（空字符串）
+cbi repository file-notes-update --repository-id <id> --file-id 123 --notes ""
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-id`: 文件 ID（必填）
+- `--notes`: 备注内容（空字符串表示清空）
+
+### 修改文件评分
+
+```bash
+cbi repository file-score-update --repository-id <id> --file-id 123 --score 4
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-id`: 文件 ID（必填）
+- `--score`: 评分（1-5，必填）
+
+---
+
+## 产品管理
+
+### 列出产品
+
+```bash
+# 列出素材库所有已关联产品
+cbi repository product-list --repository-id <id>
+
+# JSON 格式
+cbi repository product-list --repository-id <id> --format json
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+
+**产品类型说明：**
+- 1 = 应用
+- 2 = 游戏
+- 3 = 商品
+
+### 添加关联产品
+
+```bash
+# 添加单个产品
+cbi repository file-product-add --repository-id <id> --file-id 123 --products "产品A"
+
+# 批量添加多个产品
+cbi repository file-product-add --repository-id <id> --file-id 123 --products "产品A,产品B"
+
+# 指定产品类型和 URL
+cbi repository file-product-add --repository-id <id> --file-id 123 --products "游戏A" --product-type 2 --product-url "https://example.com"
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--file-id`: 文件 ID（必填）
+- `--products`: 产品名称列表（逗号分隔，必填）
+- `--product-type`: 产品类型（1=应用，2=游戏，3=商品，默认 2）
+- `--product-url`: 产品 URL（可选）
+- `--product-img`: 产品图片 URL（可选）
+- `--product-desc`: 产品描述（可选）
+
+**业务逻辑：**
+- 根据产品名称在档案库中查找
+- 存在同名产品 → 直接关联已存在的产品
+- 不存在 → 创建新产品后关联
+- 已关联的产品不会重复关联（自动去重）
 
 ---
 
