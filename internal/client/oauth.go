@@ -680,6 +680,223 @@ func (c *OAuthClient) StartDeviceCodeFlow(ctx context.Context) error {
 	return cliErr.NewCLIError("DEVICE_CODE_EXPIRED", "设备码已过期，请重新登录")
 }
 
+// CredentialDeviceCodeResponse 凭证设备码响应
+type CredentialDeviceCodeResponse struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"` // 秒
+	Interval        int    `json:"interval"`   // 轮询间隔（秒）
+}
+
+// CredentialTokenResponse 凭证 token 响应
+type CredentialTokenResponse struct {
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
+	Error     string `json:"error"` // authorization_pending, expired_token, access_denied
+}
+
+// RequestCredentialDeviceCode 请求凭证设备码（用于 config init 设备码模式）
+func (c *OAuthClient) RequestCredentialDeviceCode(ctx context.Context) (*CredentialDeviceCodeResponse, error) {
+	baseURL := config.GetBaseURL()
+	deviceURL := baseURL + "/openapi/v1/authen/device"
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"mode":  "credential",
+			"scope": "repository",
+		}).
+		Post(deviceURL)
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	// 检查是否有错误
+	errorVal := result.Get("error").String()
+	if errorVal != "" {
+		return nil, cliErr.NewCLIErrorWithDetail("CREDENTIAL_DEVICE_CODE_ERROR",
+			errorVal, result.Get("error_description").String())
+	}
+
+	// 解析响应字段
+	deviceCode := result.Get("device_code").String()
+	userCode := result.Get("user_code").String()
+	verificationURI := result.Get("verification_uri").String()
+	expiresIn := result.Get("expires_in").Int()
+	interval := result.Get("interval").Int()
+
+	// 验证必要字段
+	if deviceCode == "" || userCode == "" {
+		return nil, cliErr.NewCLIError("CREDENTIAL_DEVICE_CODE_INVALID",
+			"凭证设备码响应缺少必要字段")
+	}
+
+	// 设置默认值
+	if expiresIn == 0 {
+		expiresIn = 900 // 15 分钟
+	}
+	if interval == 0 {
+		interval = 5
+	}
+
+	return &CredentialDeviceCodeResponse{
+		DeviceCode:      deviceCode,
+		UserCode:        userCode,
+		VerificationURI: verificationURI,
+		ExpiresIn:       int(expiresIn),
+		Interval:        int(interval),
+	}, nil
+}
+
+// PollCredentialToken 轮询获取凭证（app_id/app_secret）
+func (c *OAuthClient) PollCredentialToken(ctx context.Context, deviceCode string) (*CredentialTokenResponse, error) {
+	baseURL := config.GetBaseURL()
+	tokenURL := baseURL + "/openapi/v1/authen/oauth/token"
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/x-www-form-urlencoded").
+		SetFormData(map[string]string{
+			"grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
+			"device_code": deviceCode,
+		}).
+		Post(tokenURL)
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	// 检查是否有错误
+	errorVal := result.Get("error").String()
+	if errorVal != "" {
+		return &CredentialTokenResponse{
+			Error: errorVal,
+		}, nil
+	}
+
+	// 成功获取凭证
+	appID := result.Get("app_id").String()
+	appSecret := result.Get("app_secret").String()
+
+	if appID != "" && appSecret != "" {
+		return &CredentialTokenResponse{
+			AppID:     appID,
+			AppSecret: appSecret,
+		}, nil
+	}
+
+	return nil, cliErr.NewCLIError("CREDENTIAL_TOKEN_INVALID",
+		"凭证响应格式无效")
+}
+
+// StartCredentialDeviceCodeFlow 启动凭证设备码流程（用于 config init）
+func (c *OAuthClient) StartCredentialDeviceCodeFlow(ctx context.Context) (*CredentialTokenResponse, error) {
+	// 1. 请求凭证设备码
+	deviceResp, err := c.RequestCredentialDeviceCode(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 显示登录信息
+	fmt.Println()
+	fmt.Println("========================================")
+	fmt.Println("   设备码模式 - 创建凭证")
+	fmt.Println("========================================")
+	fmt.Println()
+	fmt.Println("请在浏览器中访问以下地址:")
+	fmt.Println()
+
+	// 构建完整验证 URL（带 user_code）
+	verifyURL := deviceResp.VerificationURI
+	if !strings.Contains(verifyURL, "user_code") && deviceResp.UserCode != "" {
+		if strings.Contains(verifyURL, "?") {
+			verifyURL = verifyURL + "&user_code=" + deviceResp.UserCode
+		} else {
+			verifyURL = verifyURL + "?user_code=" + deviceResp.UserCode
+		}
+	}
+	fmt.Println("  " + verifyURL)
+	fmt.Println()
+	fmt.Println("或手动输入验证码:")
+	fmt.Println()
+	fmt.Printf("  验证码: %s\n", formatUserCode(deviceResp.UserCode))
+	fmt.Println()
+	fmt.Println("----------------------------------------")
+	fmt.Printf("有效期: %d 分钟\n", deviceResp.ExpiresIn/60)
+	fmt.Println("----------------------------------------")
+	fmt.Println()
+
+	// 尝试打开浏览器（可能失败，VPS 环境）
+	openBrowser(verifyURL)
+
+	fmt.Println("等待授权...")
+
+	// 3. 轮询等待授权
+	interval := deviceResp.Interval
+	if interval < 3 {
+		interval = 3 // 最小 3 秒
+	}
+	expiresAt := time.Now().Add(time.Duration(deviceResp.ExpiresIn) * time.Second)
+
+	for time.Now().Before(expiresAt) {
+		// 等待轮询间隔
+		select {
+		case <-time.After(time.Duration(interval) * time.Second):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+
+		// 轮询获取凭证
+		tokenResp, err := c.PollCredentialToken(ctx, deviceResp.DeviceCode)
+		if err != nil {
+			return nil, err
+		}
+
+		// 检查状态
+		switch tokenResp.Error {
+		case "":
+			// 成功获取凭证
+			if tokenResp.AppID != "" && tokenResp.AppSecret != "" {
+				fmt.Println()
+				fmt.Println("✓ 授权成功")
+				fmt.Printf("app_id:     %s\n", tokenResp.AppID)
+				fmt.Printf("app_secret: %s\n", maskCredentialSecret(tokenResp.AppSecret))
+				return tokenResp, nil
+			}
+
+		case "authorization_pending":
+			// 用户尚未授权，继续等待
+			continue
+
+		case "expired_token":
+			return nil, cliErr.NewCLIError("CREDENTIAL_DEVICE_CODE_EXPIRED", "设备码已过期，请重新初始化")
+
+		case "access_denied":
+			return nil, cliErr.NewCLIError("CREDENTIAL_ACCESS_DENIED", "用户拒绝授权")
+
+		default:
+			return nil, cliErr.NewCLIErrorWithDetail("CREDENTIAL_TOKEN_ERROR", tokenResp.Error, "")
+		}
+	}
+
+	return nil, cliErr.NewCLIError("CREDENTIAL_DEVICE_CODE_EXPIRED", "设备码已过期，请重新初始化")
+}
+
+// maskCredentialSecret 脱敏显示凭证密钥
+func maskCredentialSecret(secret string) string {
+	if len(secret) <= 12 {
+		return "****"
+	}
+	return secret[:8] + "****" + secret[len(secret)-4:]
+}
+
 // formatUserCode 格式化用户码显示
 func formatUserCode(code string) string {
 	// 如果已经是 XXXX-XXXX 格式，直接返回

@@ -19,6 +19,8 @@ trigger:
   - "设备码登录"
   - "VPS 登录"
   - "服务器登录"
+  - "设备码配置"
+  - "远程配置"
 ---
 
 # CreatiBI CLI 基础配置与认证
@@ -57,8 +59,10 @@ cbi auth whoami
 |------|------|
 | 初始化配置 | `cbi config init` |
 | 强制重新初始化 | `cbi config init --new` |
+| 设备码模式初始化 | `cbi config init --device` |
 | 查看配置 | `cbi config show` |
 | 登录授权 | `cbi auth login` |
+| 设备码登录 | `cbi auth login --device` |
 | 查看身份 | `cbi auth whoami` |
 | 退出登录 | `cbi auth logout` |
 
@@ -71,22 +75,37 @@ cbi auth whoami
 首次使用需要初始化应用凭证配置：
 
 ```bash
-# 初始化配置（交互式输入）
+# 初始化配置（交互式选择模式）
 cbi config init
 
 # 强制重新初始化（覆盖已有配置）
 cbi config init --new
+
+# 直接使用设备码模式（适用于 VPS/服务器）
+cbi config init --device
 ```
 
-**流程：**
-1. 检查配置是否已存在
-2. 若已存在，需使用 `--new` 强制覆盖
-3. 引导输入应用凭证信息：
-   - `client_id`（应用 ID）- 必填
-   - `client_secret`（应用密钥）- 必填
-   - `base_url`（默认 https://open.creatibi.cn）
-   - `default_workspace`（可选）
-4. 配置写入 `~/.cbi/config.json`
+**支持两种初始化模式：**
+
+| 模式 | 适用场景 | 说明 |
+|------|---------|------|
+| 回调模式 | 桌面环境 | 本地浏览器创建凭证，自动回传 |
+| 设备码模式 | VPS/服务器 | 远程浏览器创建凭证，轮询获取 |
+
+**回调模式流程：**
+1. CLI 启动本地回调服务器（端口 8080）
+2. 自动打开浏览器访问开放平台
+3. 用户在开放平台创建/选择应用
+4. 凭证自动回传到 CLI
+5. 配置写入 `~/.cbi/config.json`
+
+**设备码模式流程：**
+1. CLI 向平台请求设备码
+2. CLI 显示验证 URL 和验证码（如 `550e-8400`）
+3. 用户在任意浏览器访问验证 URL 并确认授权
+4. CLI 轮询等待授权（15 分钟有效期）
+5. 授权成功后获取 app_id/app_secret
+6. 配置写入 `~/.cbi/config.json`
 
 **前提条件：** 在 CreatiBI 开放平台创建应用，获取 client_id 和 client_secret
 

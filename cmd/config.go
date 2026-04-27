@@ -17,6 +17,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/CreatiBI/cli/internal/client"
 	"github.com/CreatiBI/cli/internal/config"
 )
 
@@ -33,11 +34,14 @@ var configInitCmd = &cobra.Command{
 	Short: "初始化本地配置",
 	Long: `初始化 CLI 本地配置，创建应用凭证配置文件。
 
+支持两种模式：
+1. 回调模式（默认）：本地浏览器授权，自动回传凭证
+2. 设备码模式：远程浏览器授权，适用于 VPS/服务器环境
+
 流程：
-1. 自动打开浏览器访问开放平台
-2. 在开放平台创建应用并获取凭证
-3. 凭证会自动回传到 CLI（若失败则手动输入）
-4. 写入配置文件 ~/.cbi/config.json
+1. 选择初始化模式（回调/设备码）
+2. 获取应用凭证（自动或手动）
+3. 写入配置文件 ~/.cbi/config.json
 
 首次使用需要：
 1. 在 CreatiBI 开放平台创建应用
@@ -57,19 +61,48 @@ var configInitCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// 尝试自动获取凭证
-		credentials := tryAutoFetchCredentials(cmd)
+		// 检查是否指定设备码模式
+		deviceFlag, _ := cmd.Flags().GetBool("device")
 
-		// 如果自动获取失败，手动输入
+		// 选择初始化模式
+		var credentials *Credential
+		var err error
+
+		if deviceFlag {
+			// 直接使用设备码模式
+			credentials, err = initWithDeviceCode(cmd)
+		} else {
+			// 交互式选择模式
+			mode := selectConfigMode(cmd)
+			switch mode {
+			case "callback":
+				credentials = tryAutoFetchCredentials(cmd)
+				if credentials == nil {
+					credentials = promptForCredentials(cmd)
+				}
+			case "device":
+				credentials, err = initWithDeviceCode(cmd)
+			default:
+				fmt.Fprintln(cmd.ErrOrStderr(), "错误: 无效的模式选择")
+				os.Exit(1)
+			}
+		}
+
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "错误: %s\n", err.Error())
+			os.Exit(1)
+		}
+
 		if credentials == nil {
-			credentials = promptForCredentials(cmd)
+			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 获取凭证失败")
+			os.Exit(1)
 		}
 
 		// 写入配置
 		cfg := &config.AppConfig{
-			BaseURL:         credentials.BaseURL,
-			ClientID:        credentials.ClientID,
-			ClientSecret:    credentials.ClientSecret,
+			BaseURL:          credentials.BaseURL,
+			ClientID:         credentials.ClientID,
+			ClientSecret:     credentials.ClientSecret,
 			DefaultWorkspace: credentials.DefaultWorkspace,
 		}
 
@@ -87,15 +120,70 @@ var configInitCmd = &cobra.Command{
 	},
 }
 
+// selectConfigMode 选择配置初始化模式
+func selectConfigMode(cmd *cobra.Command) string {
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+	fmt.Fprintln(cmd.OutOrStdout(), "请选择配置初始化模式:")
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+	fmt.Fprintln(cmd.OutOrStdout(), "  1. 回调模式 (推荐) - 本地浏览器授权，自动回传凭证")
+	fmt.Fprintln(cmd.OutOrStdout(), "  2. 设备码模式     - 远程浏览器授权，适用于 VPS/服务器")
+	fmt.Fprintln(cmd.OutOrStdout(), "")
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprint(cmd.OutOrStdout(), "请输入选项 [1/2]: ")
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	switch input {
+	case "1", "":
+		return "callback"
+	case "2":
+		return "device"
+	default:
+		fmt.Fprintln(cmd.ErrOrStderr(), "无效选项，使用默认回调模式")
+		return "callback"
+	}
+}
+
+// initWithDeviceCode 使用设备码模式获取凭证
+func initWithDeviceCode(cmd *cobra.Command) (*Credential, error) {
+	// 创建上下文，支持 Ctrl+C 取消
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	// 监听中断信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n取消初始化...")
+		cancel()
+	}()
+
+	// 启动设备码流程
+	oauthClient := client.NewOAuthClient(nil)
+	tokenResp, err := oauthClient.StartCredentialDeviceCodeFlow(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为凭证格式
+	return &Credential{
+		ClientID:     tokenResp.AppID,
+		ClientSecret: tokenResp.AppSecret,
+		BaseURL:      config.GetBaseURL(),
+	}, nil
+}
+
 // Credential 凭证信息
 type Credential struct {
-	ClientID        string `json:"client_id"`
-	ClientSecret    string `json:"client_secret"`
-	BaseURL         string `json:"base_url"`
+	ClientID         string `json:"client_id"`
+	ClientSecret     string `json:"client_secret"`
+	BaseURL          string `json:"base_url"`
 	DefaultWorkspace string `json:"default_workspace"`
 }
 
-// tryAutoFetchCredentials 尝试自动获取凭证
+// tryAutoFetchCredentials 尝试自动获取凭证（回调模式）
 func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 	fmt.Fprintln(cmd.OutOrStdout(), "正在打开 CreatiBI 开放平台...")
 	fmt.Fprintln(cmd.OutOrStdout(), "")
@@ -156,9 +244,9 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 
 		if clientID != "" && clientSecret != "" {
 			credChan <- &Credential{
-				ClientID:        clientID,
-				ClientSecret:    clientSecret,
-				BaseURL:         baseURL,
+				ClientID:         clientID,
+				ClientSecret:     clientSecret,
+				BaseURL:          baseURL,
 				DefaultWorkspace: defaultWorkspace,
 			}
 			w.WriteHeader(http.StatusOK)
@@ -312,9 +400,9 @@ func promptForCredentials(cmd *cobra.Command) *Credential {
 	defaultWorkspace = strings.TrimSpace(defaultWorkspace)
 
 	return &Credential{
-		ClientID:        clientID,
-		ClientSecret:    clientSecret,
-		BaseURL:         baseURL,
+		ClientID:         clientID,
+		ClientSecret:     clientSecret,
+		BaseURL:          baseURL,
 		DefaultWorkspace: defaultWorkspace,
 	}
 }
@@ -380,6 +468,7 @@ func init() {
 
 	// init 命令参数
 	configInitCmd.Flags().Bool("new", false, "强制重新初始化（覆盖已有配置）")
+	configInitCmd.Flags().Bool("device", false, "使用设备码模式（适用于 VPS/服务器）")
 }
 
 // maskSecret 脱敏显示敏感字段（显示前后缀）
