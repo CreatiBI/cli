@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -27,13 +28,9 @@ var authLoginCmd = &cobra.Command{
 	Short: "OAuth 登录",
 	Long: `使用 OAuth 协议登录 CreatiBI 平台。
 
-流程：
-1. CLI 启动本地回调服务器（端口 8080）
-2. 自动打开浏览器访问授权页面
-3. 用户在浏览器中完成授权
-4. 服务端回调到 CLI 并返回授权码
-5. CLI 用授权码换取 access_token
-6. Token 存储在 ~/.cbi/config.json
+支持两种登录模式：
+1. 授权码模式（默认） - 本地浏览器授权，适合桌面环境
+2. 设备码模式 - 远程浏览器授权，适合 VPS/服务器环境
 
 前提条件：
   需要先使用 cbi config init 初始化应用凭证`,
@@ -48,12 +45,56 @@ var authLoginCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// 使用 OAuth 登录
-		loginWithOAuth(cmd)
+		// 选择登录模式
+		loginMode := selectLoginMode(cmd)
+
+		switch loginMode {
+		case "device":
+			loginWithDeviceCode(cmd)
+		default:
+			loginWithOAuth(cmd)
+		}
 	},
 }
 
-// loginWithOAuth OAuth 登录
+// selectLoginMode 选择登录模式
+func selectLoginMode(cmd *cobra.Command) string {
+	// 检查是否有 --device 参数
+	useDevice, _ := cmd.Flags().GetBool("device")
+	if useDevice {
+		return "device"
+	}
+
+	// 检查环境变量
+	if os.Getenv("CBI_LOGIN_MODE") == "device" {
+		return "device"
+	}
+
+	// 交互式选择
+	fmt.Println()
+	fmt.Println("请选择登录模式:")
+	fmt.Println()
+	fmt.Println("  [1] 授权码模式 - 本地浏览器授权（适合桌面环境）")
+	fmt.Println("  [2] 设备码模式 - 远程浏览器授权（适合 VPS/服务器）")
+	fmt.Println()
+	fmt.Print("请输入选项 (1/2): ")
+
+	var input string
+	fmt.Scanln(&input)
+
+	input = strings.TrimSpace(input)
+	switch input {
+	case "1", "":
+		return "oauth"
+	case "2":
+		return "device"
+	default:
+		fmt.Fprintf(cmd.ErrOrStderr(), "无效选项: %s，使用默认授权码模式\n", input)
+		return "oauth"
+	}
+}
+
+// loginWithOAuth OAuth 登录（授权码模式）
 func loginWithOAuth(cmd *cobra.Command) {
 	// 初始化 OAuth 客户端
 	oauthClient := client.NewOAuthClient(nil)
@@ -93,7 +134,51 @@ func loginWithOAuth(cmd *cobra.Command) {
 		fmt.Println()
 		fmt.Println("用户信息:")
 		fmt.Fprintf(cmd.OutOrStdout(), "  用户: %s\n", userInfo.Name)
-		fmt.Fprintf(cmd.OutOrStdout(), "  邮箱: %s\n", userInfo.Email)
+		fmt.Fprintf(cmd.OutOrStdout(), "  酅箱: %s\n", userInfo.Email)
+		fmt.Fprintf(cmd.OutOrStdout(), "  ID: %d\n", userInfo.ID)
+	} else {
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "获取用户信息失败: %s\n", err.Error())
+		}
+	}
+
+	if verbose {
+		fmt.Fprintf(cmd.ErrOrStderr(), "配置文件: %s\n", config.GetConfigFile())
+	}
+}
+
+// loginWithDeviceCode 设备码登录
+func loginWithDeviceCode(cmd *cobra.Command) {
+	// 初始化 OAuth 客户端
+	oauthClient := client.NewOAuthClient(nil)
+
+	// 创建上下文，支持 Ctrl+C 取消
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 监听中断信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n取消登录...")
+		cancel()
+	}()
+
+	// 启动设备码流程
+	if err := oauthClient.StartDeviceCodeFlow(ctx); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+		os.Exit(1)
+	}
+
+	// 登录成功后自动获取用户信息
+	accessToken := config.GetAPIKey()
+	userInfo, err := oauthClient.GetUserInfo(accessToken)
+	if err == nil {
+		fmt.Println()
+		fmt.Println("用户信息:")
+		fmt.Fprintf(cmd.OutOrStdout(), "  用户: %s\n", userInfo.Name)
+		fmt.Fprintf(cmd.OutOrStdout(), "  酅箱: %s\n", userInfo.Email)
 		fmt.Fprintf(cmd.OutOrStdout(), "  ID: %d\n", userInfo.ID)
 	} else {
 		if verbose {
@@ -139,7 +224,7 @@ var authWhoamiCmd = &cobra.Command{
 		// 显示用户信息
 		fmt.Fprintln(cmd.OutOrStdout(), "当前身份:")
 		fmt.Fprintf(cmd.OutOrStdout(), "  用户: %s\n", userInfo.Name)
-		fmt.Fprintf(cmd.OutOrStdout(), "  邅箱: %s\n", userInfo.Email)
+		fmt.Fprintf(cmd.OutOrStdout(), "  酅箱: %s\n", userInfo.Email)
 		fmt.Fprintf(cmd.OutOrStdout(), "  ID: %d\n", userInfo.ID)
 		if userInfo.Avatar != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "  头像: %s\n", userInfo.Avatar)
@@ -187,6 +272,9 @@ func init() {
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authWhoamiCmd)
 	authCmd.AddCommand(authLogoutCmd)
+
+	// 登录命令参数
+	authLoginCmd.Flags().Bool("device", false, "使用设备码模式登录（适合 VPS/服务器环境）")
 }
 
 // maskToken 隐藏 Token 的中间部分

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/go-resty/resty/v2"
@@ -400,4 +401,241 @@ type UserInfo struct {
 	Name   string `json:"name"`
 	Email  string `json:"email"`
 	Avatar string `json:"avatar"`
+}
+
+// DeviceCodeResponse 设备码响应
+type DeviceCodeResponse struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"` // 秒
+	Interval        int    `json:"interval"`   // 轮询间隔（秒）
+}
+
+// DeviceTokenResponse 设备码换取 token 响应
+type DeviceTokenResponse struct {
+	AccessToken           string `json:"access_token"`
+	RefreshToken          string `json:"refresh_token"`
+	ExpiresIn             int    `json:"expires_in"`
+	RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
+	Error                 string `json:"error"` // authorization_pending, slow_down, expired_token, access_denied
+	ErrorDescription      string `json:"error_description"`
+}
+
+// RequestDeviceCode 请求设备码
+func (c *OAuthClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeResponse, error) {
+	baseURL := config.GetBaseURL()
+	deviceURL := baseURL + "/openapi/v1/authen/device"
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"client_id": config.GetClientID(),
+			"scope":     "user:profile repository",
+		}).
+		Post(deviceURL)
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	// 检查错误码
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("DEVICE_CODE_ERROR",
+			fmt.Sprintf("获取设备码失败 (%d)", codeVal), message)
+	}
+
+	return &DeviceCodeResponse{
+		DeviceCode:      result.Get("data.device_code").String(),
+		UserCode:        result.Get("data.user_code").String(),
+		VerificationURI: result.Get("data.verification_uri").String(),
+		ExpiresIn:       int(result.Get("data.expires_in").Int()),
+		Interval:        int(result.Get("data.interval").Int()),
+	}, nil
+}
+
+// PollDeviceToken 轮询获取 token
+func (c *OAuthClient) PollDeviceToken(ctx context.Context, deviceCode string) (*DeviceTokenResponse, error) {
+	baseURL := config.GetBaseURL()
+	tokenURL := baseURL + "/openapi/v1/authen/oauth/token"
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("Content-Type", "application/x-www-form-urlencoded").
+		SetFormData(map[string]string{
+			"grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
+			"device_code": deviceCode,
+			"client_id":   config.GetClientID(),
+		}).
+		Post(tokenURL)
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	// 检查是否有错误
+	errorVal := result.Get("error").String()
+	if errorVal != "" {
+		return &DeviceTokenResponse{
+			Error:            errorVal,
+			ErrorDescription: result.Get("error_description").String(),
+		}, nil
+	}
+
+	// 检查 code
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		// 尝试获取错误信息
+		errorVal := result.Get("data.error").String()
+		if errorVal != "" {
+			return &DeviceTokenResponse{
+				Error:            errorVal,
+				ErrorDescription: result.Get("data.error_description").String(),
+			}, nil
+		}
+		return nil, cliErr.NewCLIErrorWithDetail("DEVICE_TOKEN_ERROR",
+			fmt.Sprintf("获取 token 失败 (%d)", codeVal), result.Get("message").String())
+	}
+
+	// 成功获取 token
+	data := result.Get("data")
+	return &DeviceTokenResponse{
+		AccessToken:           data.Get("access_token").String(),
+		RefreshToken:          data.Get("refresh_token").String(),
+		ExpiresIn:             int(data.Get("expires_in").Int()),
+		RefreshTokenExpiresIn: int(data.Get("refresh_token_expires_in").Int()),
+	}, nil
+}
+
+// StartDeviceCodeFlow 启动设备码登录流程
+func (c *OAuthClient) StartDeviceCodeFlow(ctx context.Context) error {
+	// 1. 获取设备码
+	deviceResp, err := c.RequestDeviceCode(ctx)
+	if err != nil {
+		return err
+	}
+
+	// 2. 显示登录信息
+	fmt.Println()
+	fmt.Println("========================================")
+	fmt.Println("   设备码登录")
+	fmt.Println("========================================")
+	fmt.Println()
+	fmt.Println("请在浏览器中访问以下地址:")
+	fmt.Println()
+	// 构建完整验证 URL（带 user_code）
+	verifyURL := deviceResp.VerificationURI
+	if !strings.Contains(verifyURL, "user_code") && deviceResp.UserCode != "" {
+		if strings.Contains(verifyURL, "?") {
+			verifyURL = verifyURL + "&user_code=" + deviceResp.UserCode
+		} else {
+			verifyURL = verifyURL + "?user_code=" + deviceResp.UserCode
+		}
+	}
+	fmt.Println("  " + verifyURL)
+	fmt.Println()
+	fmt.Println("或手动输入验证码:")
+	fmt.Println()
+	fmt.Printf("  验证码: %s\n", formatUserCode(deviceResp.UserCode))
+	fmt.Println()
+	fmt.Println("----------------------------------------")
+	fmt.Printf("有效期: %d 分钟\n", deviceResp.ExpiresIn/60)
+	fmt.Println("----------------------------------------")
+	fmt.Println()
+
+	// 尝试打开浏览器
+	openBrowser(verifyURL)
+
+	fmt.Println("等待授权...")
+
+	// 3. 轮询等待授权
+	interval := deviceResp.Interval
+	if interval < 3 {
+		interval = 3 // 最小 3 秒
+	}
+	expiresAt := time.Now().Add(time.Duration(deviceResp.ExpiresIn) * time.Second)
+
+	for time.Now().Before(expiresAt) {
+		// 等待轮询间隔
+		select {
+		case <-time.After(time.Duration(interval) * time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		// 轮询获取 token
+		tokenResp, err := c.PollDeviceToken(ctx, deviceResp.DeviceCode)
+		if err != nil {
+			return err
+		}
+
+		// 检查状态
+		switch tokenResp.Error {
+		case "":
+			// 成功获取 token
+			if tokenResp.AccessToken != "" {
+				// 存储 token
+				if err := config.SetAPIKey(tokenResp.AccessToken); err != nil {
+					return err
+				}
+				// 存储 refresh_token
+				if tokenResp.RefreshToken != "" {
+					config.SetRefreshToken(tokenResp.RefreshToken)
+				}
+				// 存储过期时间
+				if tokenResp.ExpiresIn > 0 {
+					config.SetTokenExpiresAt(time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second))
+				}
+				if tokenResp.RefreshTokenExpiresIn > 0 {
+					config.SetRefreshTokenExpiresAt(time.Now().Add(time.Duration(tokenResp.RefreshTokenExpiresIn) * time.Second))
+				}
+
+				fmt.Println()
+				fmt.Println("✓ 登录成功")
+				fmt.Printf("Token 已存储到: %s\n", config.GetConfigFile())
+				return nil
+			}
+
+		case "authorization_pending":
+			// 用户尚未授权，继续等待
+			continue
+
+		case "slow_down":
+			// 轮询太快，增加间隔
+			interval += 5
+			fmt.Println("轮询间隔增加，请稍候...")
+			continue
+
+		case "expired_token":
+			return cliErr.NewCLIError("DEVICE_CODE_EXPIRED", "设备码已过期，请重新登录")
+
+		case "access_denied":
+			return cliErr.NewCLIError("DEVICE_ACCESS_DENIED", "用户拒绝授权")
+
+		default:
+			return cliErr.NewCLIErrorWithDetail("DEVICE_TOKEN_ERROR", tokenResp.Error, tokenResp.ErrorDescription)
+		}
+	}
+
+	return cliErr.NewCLIError("DEVICE_CODE_EXPIRED", "设备码已过期，请重新登录")
+}
+
+// formatUserCode 格式化用户码显示
+func formatUserCode(code string) string {
+	// 如果已经是 XXXX-XXXX 格式，直接返回
+	if strings.Contains(code, "-") {
+		return code
+	}
+	// 如果是 8 位，格式化为 XXXX-XXXX
+	if len(code) == 8 {
+		return code[:4] + "-" + code[4:]
+	}
+	return code
 }
