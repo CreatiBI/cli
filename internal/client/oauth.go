@@ -442,7 +442,14 @@ func (c *OAuthClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeRespons
 
 	result := gjson.ParseBytes(resp.Body())
 
-	// 检查错误码
+	// 检查是否有错误（标准 OAuth 错误格式）
+	errorVal := result.Get("error").String()
+	if errorVal != "" {
+		return nil, cliErr.NewCLIErrorWithDetail("DEVICE_CODE_ERROR",
+			errorVal, result.Get("error_description").String())
+	}
+
+	// 检查 code（CreatiBI API 格式）
 	codeVal := result.Get("code").Int()
 	if codeVal != 0 {
 		message := result.Get("message").String()
@@ -450,12 +457,42 @@ func (c *OAuthClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeRespons
 			fmt.Sprintf("获取设备码失败 (%d)", codeVal), message)
 	}
 
+	// 解析响应：支持两种格式
+	// 格式1: 直接返回字段（标准 OAuth）
+	// 格式2: 包裹在 data 里（CreatiBI API）
+	deviceCode := result.Get("device_code").String()
+	if deviceCode == "" {
+		deviceCode = result.Get("data.device_code").String()
+	}
+	userCode := result.Get("user_code").String()
+	if userCode == "" {
+		userCode = result.Get("data.user_code").String()
+	}
+	verificationURI := result.Get("verification_uri").String()
+	if verificationURI == "" {
+		verificationURI = result.Get("data.verification_uri").String()
+	}
+	expiresIn := result.Get("expires_in").Int()
+	if expiresIn == 0 {
+		expiresIn = result.Get("data.expires_in").Int()
+	}
+	interval := result.Get("interval").Int()
+	if interval == 0 {
+		interval = result.Get("data.interval").Int()
+	}
+
+	// 验证必要字段
+	if deviceCode == "" || userCode == "" {
+		return nil, cliErr.NewCLIError("DEVICE_CODE_INVALID",
+			"设备码响应缺少必要字段")
+	}
+
 	return &DeviceCodeResponse{
-		DeviceCode:      result.Get("data.device_code").String(),
-		UserCode:        result.Get("data.user_code").String(),
-		VerificationURI: result.Get("data.verification_uri").String(),
-		ExpiresIn:       int(result.Get("data.expires_in").Int()),
-		Interval:        int(result.Get("data.interval").Int()),
+		DeviceCode:      deviceCode,
+		UserCode:        userCode,
+		VerificationURI: verificationURI,
+		ExpiresIn:       int(expiresIn),
+		Interval:        int(interval),
 	}, nil
 }
 
@@ -480,7 +517,7 @@ func (c *OAuthClient) PollDeviceToken(ctx context.Context, deviceCode string) (*
 
 	result := gjson.ParseBytes(resp.Body())
 
-	// 检查是否有错误
+	// 检查是否有错误（标准 OAuth 错误格式）
 	errorVal := result.Get("error").String()
 	if errorVal != "" {
 		return &DeviceTokenResponse{
@@ -489,14 +526,25 @@ func (c *OAuthClient) PollDeviceToken(ctx context.Context, deviceCode string) (*
 		}, nil
 	}
 
-	// 检查 code
+	// 成功获取 token（直接返回字段）
+	accessToken := result.Get("access_token").String()
+	if accessToken != "" {
+		return &DeviceTokenResponse{
+			AccessToken:           accessToken,
+			RefreshToken:          result.Get("refresh_token").String(),
+			ExpiresIn:             int(result.Get("expires_in").Int()),
+			RefreshTokenExpiresIn: int(result.Get("refresh_token_expires_in").Int()),
+		}, nil
+	}
+
+	// 检查 CreatiBI API 格式（包裹在 data 里）
 	codeVal := result.Get("code").Int()
 	if codeVal != 0 {
 		// 尝试获取错误信息
-		errorVal := result.Get("data.error").String()
-		if errorVal != "" {
+		dataError := result.Get("data.error").String()
+		if dataError != "" {
 			return &DeviceTokenResponse{
-				Error:            errorVal,
+				Error:            dataError,
 				ErrorDescription: result.Get("data.error_description").String(),
 			}, nil
 		}
@@ -504,14 +552,19 @@ func (c *OAuthClient) PollDeviceToken(ctx context.Context, deviceCode string) (*
 			fmt.Sprintf("获取 token 失败 (%d)", codeVal), result.Get("message").String())
 	}
 
-	// 成功获取 token
+	// 尝试从 data 中获取 token
 	data := result.Get("data")
-	return &DeviceTokenResponse{
-		AccessToken:           data.Get("access_token").String(),
-		RefreshToken:          data.Get("refresh_token").String(),
-		ExpiresIn:             int(data.Get("expires_in").Int()),
-		RefreshTokenExpiresIn: int(data.Get("refresh_token_expires_in").Int()),
-	}, nil
+	if data.Exists() {
+		return &DeviceTokenResponse{
+			AccessToken:           data.Get("access_token").String(),
+			RefreshToken:          data.Get("refresh_token").String(),
+			ExpiresIn:             int(data.Get("expires_in").Int()),
+			RefreshTokenExpiresIn: int(data.Get("refresh_token_expires_in").Int()),
+		}, nil
+	}
+
+	return nil, cliErr.NewCLIError("DEVICE_TOKEN_INVALID",
+		"Token 响应格式无效")
 }
 
 // StartDeviceCodeFlow 启动设备码登录流程
