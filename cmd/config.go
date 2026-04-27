@@ -128,7 +128,7 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 		return nil
 	}
 
-	platformURL := fmt.Sprintf("https://open.creatibi.cn/?callback=%s", callbackURL)
+	platformURL := fmt.Sprintf("https://open.creatibi.cn/page/cli?form=cli&callback=%s", callbackURL)
 
 	// 创建上下文，支持 Ctrl+C 取消
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
