@@ -36,3 +36,6 @@ go.work.sum
 # 临时文件
 tmp/
 temp/
+
+# Claude Code 开发规范（不提交）
+CLAUDE.md
