@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/CreatiBI/cli/internal/config"
+	"github.com/CreatiBI/cli/internal/update"
 )
 
 var (
@@ -44,6 +45,9 @@ func Execute() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+
+	// 更新检查（静默，不影响主命令）
+	update.CheckAndNotify(Version)
 }
 
 func init() {
