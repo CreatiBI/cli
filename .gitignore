@@ -39,3 +39,12 @@ temp/
 
 # Claude Code 开发规范（不提交）
 CLAUDE.md
+
+# Claude Code 设计文档（不提交）
+docs/superpowers/
+
+# AGENTS.md（不提交）
+AGENTS.md
+
+# 编译产物（根目录）
+/cli
