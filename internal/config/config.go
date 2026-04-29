@@ -26,6 +26,10 @@ type AppConfig struct {
 	RefreshToken     string    `json:"refresh_token,omitempty"`
 	TokenExpiresAt   time.Time `json:"token_expires_at,omitempty"`
 	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at,omitempty"`
+
+	// 更新检查缓存
+	UpdateLastCheckedAt  time.Time `json:"update_last_checked_at,omitempty"`
+	UpdateLatestVersion  string    `json:"update_latest_version,omitempty"`
 }
 
 // Init 初始化配置目录
@@ -216,5 +220,43 @@ func Clear() error {
 	cfg.TokenExpiresAt = time.Time{}
 	cfg.RefreshTokenExpiresAt = time.Time{}
 
+	return SaveAppConfig(cfg)
+}
+
+// GetUpdateLastCheckedAt 获取上次更新检查时间
+func GetUpdateLastCheckedAt() time.Time {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		return time.Time{}
+	}
+	return cfg.UpdateLastCheckedAt
+}
+
+// SetUpdateLastCheckedAt 设置上次更新检查时间
+func SetUpdateLastCheckedAt(t time.Time) error {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		cfg = &AppConfig{}
+	}
+	cfg.UpdateLastCheckedAt = t
+	return SaveAppConfig(cfg)
+}
+
+// GetUpdateLatestVersion 获取缓存的最新版本
+func GetUpdateLatestVersion() string {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		return ""
+	}
+	return cfg.UpdateLatestVersion
+}
+
+// SetUpdateLatestVersion 设置缓存的最新版本
+func SetUpdateLatestVersion(version string) error {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		cfg = &AppConfig{}
+	}
+	cfg.UpdateLatestVersion = version
 	return SaveAppConfig(cfg)
 }
