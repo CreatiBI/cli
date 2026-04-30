@@ -27,6 +27,58 @@ var repositoryCmd = &cobra.Command{
 	Short:   "素材库管理",
 	Long:    `管理素材库，包括查看素材库列表、文件夹、文件查重、文件上传。`,
 	Aliases: []string{"repo"},
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if !config.IsLoggedIn() {
+			return cliErr.ErrAuthRequired
+		}
+		return nil
+	},
+}
+
+// requireRepositoryID 获取并验证 repository-id 参数
+func requireRepositoryID(cmd *cobra.Command) (int64, error) {
+	id, _ := cmd.Flags().GetInt64("repository-id")
+	if id == 0 {
+		return 0, cliErr.NewCLIError("MISSING_REPOSITORY_ID", "必须指定 --repository-id")
+	}
+	return id, nil
+}
+
+// requireFileID 获取并验证 file-id 参数
+func requireFileID(cmd *cobra.Command) (int64, error) {
+	id, _ := cmd.Flags().GetInt64("file-id")
+	if id == 0 {
+		return 0, cliErr.NewCLIError("MISSING_FILE_ID", "必须指定 --file-id")
+	}
+	return id, nil
+}
+
+// parseIDList 解析逗号分隔的 ID 列表
+func parseIDList(s, label string) ([]int64, error) {
+	if s == "" {
+		return nil, cliErr.NewCLIError("MISSING_IDS", fmt.Sprintf("必须指定 --%s", label))
+	}
+	var ids []int64
+	for _, idStr := range strings.Split(s, ",") {
+		id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
+		if err != nil {
+			return nil, cliErr.NewCLIError("INVALID_ID", fmt.Sprintf("无效的 %s - %s", label, idStr))
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// newSignalCtx 创建支持信号取消的 context
+func newSignalCtx() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		cancel()
+	}()
+	return ctx, cancel
 }
 
 // repositoryListCmd 列出素材库
@@ -35,39 +87,26 @@ var repositoryListCmd = &cobra.Command{
 	Short: "列出可访问的素材库",
 	Long:  `获取权限范围内的素材库列表。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx, cancel := newSignalCtx()
 		defer cancel()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-sigChan
-			cancel()
-		}()
 
 		repoClient := client.NewRepositoryClient()
 		repositories, err := repoClient.ListRepositories(ctx)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, repositories)
-			return
+			return outputData(cmd, repositories)
 		}
 
 		switch format {
 		case "json":
-			outputData(cmd, repositories)
+			return outputData(cmd, repositories)
 		default:
 			printRepositoryTable(cmd, repositories)
+			return nil
 		}
 	},
 }
@@ -78,48 +117,34 @@ var repositoryFoldersCmd = &cobra.Command{
 	Short: "列出素材库文件夹",
 	Long:  `获取素材库的文件夹列表，支持指定父文件夹和统计信息。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		parentFolderID, _ := cmd.Flags().GetInt64("parent-folder-id")
 		withStatistic, _ := cmd.Flags().GetBool("with-statistic")
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-sigChan
-			cancel()
-		}()
 
 		repoClient := client.NewRepositoryClient()
 		folders, err := repoClient.ListFolders(ctx, repositoryID, parentFolderID, withStatistic)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, folders)
-			return
+			return outputData(cmd, folders)
 		}
 
 		switch format {
 		case "json":
-			outputData(cmd, folders)
+			return outputData(cmd, folders)
 		default:
 			printFolderTable(cmd, folders, withStatistic)
+			return nil
 		}
 	},
 }
@@ -135,22 +160,15 @@ var repositoryFolderCreateCmd = &cobra.Command{
   cbi repository folder-create --repository-id 1 --name "子文件夹" --parent-id 10
   cbi repository folder-create --repository-id 1 --name "测试" --color "#FF5733"`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		name, _ := cmd.Flags().GetString("name")
 		if name == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --name")
-			os.Exit(1)
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
 		}
 
 		parentID, _ := cmd.Flags().GetInt64("parent-id")
@@ -169,13 +187,11 @@ var repositoryFolderCreateCmd = &cobra.Command{
 			Icon:         icon,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件夹创建成功")
@@ -184,6 +200,7 @@ var repositoryFolderCreateCmd = &cobra.Command{
 		if result.ParentID > 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "  父文件夹 ID: %d\n", result.ParentID)
 		}
+		return nil
 	},
 }
 
@@ -193,38 +210,31 @@ var repositoryTagListCmd = &cobra.Command{
 	Short: "列出素材库标签",
 	Long:  `获取素材库中所有可用标签。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
 
 		repoClient := client.NewRepositoryClient()
 		tags, err := repoClient.ListTags(ctx, repositoryID)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, tags)
-			return
+			return outputData(cmd, tags)
 		}
 
 		switch format {
 		case "json":
-			outputData(cmd, tags)
+			return outputData(cmd, tags)
 		default:
 			printTagListTable(cmd, tags)
+			return nil
 		}
 	},
 }
@@ -239,42 +249,22 @@ var repositoryFileTagAddCmd = &cobra.Command{
   cbi repository file-tag-add --repository-id 1 --file-ids 10,20,30 --tags "游戏,新素材"
   cbi repository file-tag-add --repository-id 1 --file-ids 100 --tags "优质"`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		fileIDsStr, _ := cmd.Flags().GetString("file-ids")
-		if fileIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-ids")
-			os.Exit(1)
+		fileIDs, err := parseIDList(fileIDsStr, "file-ids")
+		if err != nil {
+			return err
 		}
 
 		tagsStr, _ := cmd.Flags().GetString("tags")
 		if tagsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --tags")
-			os.Exit(1)
+			return cliErr.NewCLIError("MISSING_TAGS", "必须指定 --tags")
 		}
-
-		// 解析 file-ids
-		fileIDs := []int64{}
-		for _, idStr := range strings.Split(fileIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的文件 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			fileIDs = append(fileIDs, id)
-		}
-
-		// 解析 tags
 		tagNames := []string{}
 		for _, tag := range strings.Split(tagsStr, ",") {
 			tagNames = append(tagNames, strings.TrimSpace(tag))
@@ -290,13 +280,11 @@ var repositoryFileTagAddCmd = &cobra.Command{
 			TagNames:     tagNames,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 标签添加成功")
@@ -307,6 +295,7 @@ var repositoryFileTagAddCmd = &cobra.Command{
 				fmt.Fprintf(cmd.OutOrStdout(), "    - %s (ID: %d)\n", tag.Name, tag.ID)
 			}
 		}
+		return nil
 	},
 }
 
@@ -319,50 +308,22 @@ var repositoryFileFolderAddCmd = &cobra.Command{
 示例：
   cbi repository file-folder-add --repository-id 1 --file-ids 10,20,30 --folder-ids 5,8`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		fileIDsStr, _ := cmd.Flags().GetString("file-ids")
-		if fileIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-ids")
-			os.Exit(1)
+		fileIDs, err := parseIDList(fileIDsStr, "file-ids")
+		if err != nil {
+			return err
 		}
 
 		folderIDsStr, _ := cmd.Flags().GetString("folder-ids")
-		if folderIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --folder-ids")
-			os.Exit(1)
-		}
-
-		// 解析 file-ids
-		fileIDs := []int64{}
-		for _, idStr := range strings.Split(fileIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的文件 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			fileIDs = append(fileIDs, id)
-		}
-
-		// 解析 folder-ids
-		folderIDs := []int64{}
-		for _, idStr := range strings.Split(folderIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的文件夹 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			folderIDs = append(folderIDs, id)
+		folderIDs, err := parseIDList(folderIDsStr, "folder-ids")
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -375,19 +336,18 @@ var repositoryFileFolderAddCmd = &cobra.Command{
 			FolderIDs:    folderIDs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件已添加到文件夹")
 		fmt.Fprintf(cmd.OutOrStdout(), "  新建关联数: %d\n", result.SuccessCount)
 		fmt.Fprintf(cmd.OutOrStdout(), "  处理文件数: %d\n", result.AddedFileCount)
 		fmt.Fprintf(cmd.OutOrStdout(), "  添加到文件夹数: %d\n", result.AddedFolderCount)
+		return nil
 	},
 }
 
@@ -397,16 +357,10 @@ var repositoryFileCheckCmd = &cobra.Command{
 	Short: "检查文件是否已存在",
 	Long:  `通过 MD5 检查文件是否已存在于素材库中。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		filePath, _ := cmd.Flags().GetString("file")
@@ -415,8 +369,7 @@ var repositoryFileCheckCmd = &cobra.Command{
 		if filePath != "" && fileMD5 == "" {
 			md5Val, err := calculateFileMD5(filePath)
 			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "计算文件 MD5 失败: %s\n", err.Error())
-				os.Exit(1)
+				return cliErr.NewCLIErrorWithDetail("MD5_FAILED", "计算文件 MD5 失败", err.Error())
 			}
 			fileMD5 = md5Val
 			if verbose {
@@ -425,23 +378,20 @@ var repositoryFileCheckCmd = &cobra.Command{
 		}
 
 		if fileMD5 == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file 或 --file-md5")
-			os.Exit(1)
+			return cliErr.NewCLIError("MISSING_FILE", "必须指定 --file 或 --file-md5")
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
 
 		repoClient := client.NewRepositoryClient()
 		result, err := repoClient.CheckFile(ctx, repositoryID, fileMD5)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		if result.Existed {
@@ -453,6 +403,7 @@ var repositoryFileCheckCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "  文件: %s\n", filePath)
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "  MD5: %s\n", fileMD5)
+		return nil
 	},
 }
 
@@ -472,45 +423,28 @@ var repositoryFileCreateCmd = &cobra.Command{
   cbi repository file-create --repository-id 1 --file ./image.png
   cbi repository file-create --repository-id 1 --file ./video.mp4 --folder-id 123`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		filePath, _ := cmd.Flags().GetString("file")
 		if filePath == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file")
-			os.Exit(1)
+			return cliErr.NewCLIError("MISSING_FILE", "必须指定 --file")
 		}
 
 		fileInfo, err := os.Stat(filePath)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "错误: 文件不存在 - %s\n", filePath)
-			os.Exit(1)
+			return cliErr.NewCLIError("FILE_NOT_FOUND", fmt.Sprintf("文件不存在 - %s", filePath))
 		}
 
 		if fileInfo.Size() > 100*1024*1024 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 文件大小超过 100MB 限制")
-			os.Exit(1)
+			return cliErr.NewCLIError("FILE_TOO_LARGE", "文件大小超过 100MB 限制")
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-sigChan
-			fmt.Println("\n取消上传...")
-			cancel()
-		}()
 
 		repoClient := client.NewRepositoryClient()
 
@@ -555,18 +489,17 @@ var repositoryFileCreateCmd = &cobra.Command{
 
 		fileInfoResult, err := repoClient.CreateFile(ctx, req)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, fileInfoResult)
-			return
+			return outputData(cmd, fileInfoResult)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件上传成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", fileInfoResult.ID)
 		fmt.Fprintf(cmd.OutOrStdout(), "  文件名: %s\n", fileInfoResult.Name)
+		return nil
 	},
 }
 
@@ -588,16 +521,10 @@ var repositoryFileListCmd = &cobra.Command{
   cbi repository file-list --repository-id 1 --has-signals
   cbi repository file-list --repository-id 1 --has-signals=false`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		folderID, _ := cmd.Flags().GetInt64("folder-id")
@@ -614,7 +541,7 @@ var repositoryFileListCmd = &cobra.Command{
 			hasSignals = &val
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
 
 		repoClient := client.NewRepositoryClient()
@@ -628,20 +555,19 @@ var repositoryFileListCmd = &cobra.Command{
 			PageSize:     pageSize,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		switch format {
 		case "json":
-			outputData(cmd, result)
+			return outputData(cmd, result)
 		default:
 			printFileListTable(cmd, result)
+			return nil
 		}
 	},
 }
@@ -656,34 +582,27 @@ var repositoryFileDetailCmd = &cobra.Command{
   cbi repository file-detail 123
   cbi repository file-detail 123 --format json`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
+	RunE: func(cmd *cobra.Command, args []string) error {
 		fileID, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的文件 ID - %s\n", args[0])
-			os.Exit(1)
+			return cliErr.NewCLIError("INVALID_FILE_ID", fmt.Sprintf("无效的文件 ID - %s", args[0]))
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
 
 		repoClient := client.NewRepositoryClient()
 		detail, err := repoClient.GetFileDetail(ctx, fileID)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet || format == "json" {
-			outputData(cmd, detail)
-			return
+			return outputData(cmd, detail)
 		}
 
 		printFileDetail(cmd, detail)
+		return nil
 	},
 }
 
@@ -696,28 +615,20 @@ var repositoryFileNameUpdateCmd = &cobra.Command{
 示例：
   cbi repository file-name-update --repository-id 1 --file-id 123 --name "新名称"`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		fileID, _ := cmd.Flags().GetInt64("file-id")
-		if fileID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
-			os.Exit(1)
+		fileID, err := requireFileID(cmd)
+		if err != nil {
+			return err
 		}
 
 		name, _ := cmd.Flags().GetString("name")
 		if name == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --name")
-			os.Exit(1)
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -730,18 +641,17 @@ var repositoryFileNameUpdateCmd = &cobra.Command{
 			Name:         name,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件名称更新成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", result.FileID)
 		fmt.Fprintf(cmd.OutOrStdout(), "  新名称: %s\n", result.Name)
+		return nil
 	},
 }
 
@@ -755,22 +665,15 @@ var repositoryFileNotesUpdateCmd = &cobra.Command{
   cbi repository file-notes-update --repository-id 1 --file-id 123 --notes "这是备注"
   cbi repository file-notes-update --repository-id 1 --file-id 123 --notes ""  # 清空备注`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		fileID, _ := cmd.Flags().GetInt64("file-id")
-		if fileID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
-			os.Exit(1)
+		fileID, err := requireFileID(cmd)
+		if err != nil {
+			return err
 		}
 
 		notes, _ := cmd.Flags().GetString("notes")
@@ -785,13 +688,11 @@ var repositoryFileNotesUpdateCmd = &cobra.Command{
 			Notes:        notes,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件备注更新成功")
@@ -801,6 +702,7 @@ var repositoryFileNotesUpdateCmd = &cobra.Command{
 		} else {
 			fmt.Fprintln(cmd.OutOrStdout(), "  备注: (已清空)")
 		}
+		return nil
 	},
 }
 
@@ -813,28 +715,20 @@ var repositoryFileScoreUpdateCmd = &cobra.Command{
 示例：
   cbi repository file-score-update --repository-id 1 --file-id 123 --score 4`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		fileID, _ := cmd.Flags().GetInt64("file-id")
-		if fileID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
-			os.Exit(1)
+		fileID, err := requireFileID(cmd)
+		if err != nil {
+			return err
 		}
 
 		score, _ := cmd.Flags().GetInt("score")
 		if score < 1 || score > 5 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 评分必须在 1-5 范围内")
-			os.Exit(1)
+			return cliErr.NewCLIError("INVALID_SCORE", "评分必须在 1-5 范围内")
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -847,18 +741,17 @@ var repositoryFileScoreUpdateCmd = &cobra.Command{
 			Score:        score,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件评分更新成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  文件 ID: %d\n", result.FileID)
 		fmt.Fprintf(cmd.OutOrStdout(), "  评分: %d\n", result.Score)
+		return nil
 	},
 }
 
@@ -872,38 +765,31 @@ var repositoryProductListCmd = &cobra.Command{
   cbi repository product-list --repository-id 1
   cbi repository product-list --repository-id 1 --format json`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := newSignalCtx()
 		defer cancel()
 
 		repoClient := client.NewRepositoryClient()
 		products, err := repoClient.ListProducts(ctx, repositoryID)
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, products)
-			return
+			return outputData(cmd, products)
 		}
 
 		switch format {
 		case "json":
-			outputData(cmd, products)
+			return outputData(cmd, products)
 		default:
 			printProductListTable(cmd, products)
+			return nil
 		}
 	},
 }
@@ -929,28 +815,20 @@ var repositoryFileProductAddCmd = &cobra.Command{
   cbi repository file-product-add --repository-id 1 --file-id 123 --products "产品A,产品B"
   cbi repository file-product-add --repository-id 1 --file-id 123 --products "产品A" --product-type 2`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		fileID, _ := cmd.Flags().GetInt64("file-id")
-		if fileID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
-			os.Exit(1)
+		fileID, err := requireFileID(cmd)
+		if err != nil {
+			return err
 		}
 
 		productsStr, _ := cmd.Flags().GetString("products")
 		if productsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --products")
-			os.Exit(1)
+			return cliErr.NewCLIError("MISSING_PRODUCTS", "必须指定 --products")
 		}
 
 		productType, _ := cmd.Flags().GetInt("product-type")
@@ -990,13 +868,11 @@ var repositoryFileProductAddCmd = &cobra.Command{
 			Products:     productInputs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 产品关联添加成功")
@@ -1011,6 +887,7 @@ var repositoryFileProductAddCmd = &cobra.Command{
 				fmt.Fprintf(cmd.OutOrStdout(), "    - %s (ID: %d)%s\n", p.Name, p.ID, newStr)
 			}
 		}
+		return nil
 	},
 }
 
@@ -1023,39 +900,21 @@ var repositoryFileTagRemoveCmd = &cobra.Command{
 示例：
   cbi repository file-tag-remove --repository-id 1 --file-id 123 --tag-ids 5,10`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		fileID, _ := cmd.Flags().GetInt64("file-id")
-		if fileID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
-			os.Exit(1)
+		fileID, err := requireFileID(cmd)
+		if err != nil {
+			return err
 		}
 
 		tagIDsStr, _ := cmd.Flags().GetString("tag-ids")
-		if tagIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --tag-ids")
-			os.Exit(1)
-		}
-
-		// 解析 tag-ids
-		tagIDs := []int64{}
-		for _, idStr := range strings.Split(tagIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的标签 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			tagIDs = append(tagIDs, id)
+		tagIDs, err := parseIDList(tagIDsStr, "tag-ids")
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1068,17 +927,16 @@ var repositoryFileTagRemoveCmd = &cobra.Command{
 			TagIDs:       tagIDs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 标签移除成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  移除数量: %d\n", result.SuccessCount)
+		return nil
 	},
 }
 
@@ -1091,39 +949,21 @@ var repositoryFileProductRemoveCmd = &cobra.Command{
 示例：
   cbi repository file-product-remove --repository-id 1 --file-id 123 --product-ids 10,15`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
-		}
-
-		fileID, _ := cmd.Flags().GetInt64("file-id")
-		if fileID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-id")
-			os.Exit(1)
+		fileID, err := requireFileID(cmd)
+		if err != nil {
+			return err
 		}
 
 		productIDsStr, _ := cmd.Flags().GetString("product-ids")
-		if productIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --product-ids")
-			os.Exit(1)
-		}
-
-		// 解析 product-ids
-		productIDs := []int64{}
-		for _, idStr := range strings.Split(productIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的产品 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			productIDs = append(productIDs, id)
+		productIDs, err := parseIDList(productIDsStr, "product-ids")
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1136,17 +976,16 @@ var repositoryFileProductRemoveCmd = &cobra.Command{
 			ProductIDs:   productIDs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 关联产品移除成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  移除数量: %d\n", result.SuccessCount)
+		return nil
 	},
 }
 
@@ -1159,33 +998,16 @@ var repositoryProductDeleteCmd = &cobra.Command{
 示例：
   cbi repository product-delete --repository-id 1 --product-ids 10,15,20`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		productIDsStr, _ := cmd.Flags().GetString("product-ids")
-		if productIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --product-ids")
-			os.Exit(1)
-		}
-
-		// 解析 product-ids
-		productIDs := []int64{}
-		for _, idStr := range strings.Split(productIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的产品 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			productIDs = append(productIDs, id)
+		productIDs, err := parseIDList(productIDsStr, "product-ids")
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1197,17 +1019,16 @@ var repositoryProductDeleteCmd = &cobra.Command{
 			ProductIDs:   productIDs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 产品删除成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  删除数量: %d\n", result.SuccessCount)
+		return nil
 	},
 }
 
@@ -1220,33 +1041,16 @@ var repositoryFileDeleteCmd = &cobra.Command{
 示例：
   cbi repository file-delete --repository-id 1 --file-ids 123,124,125`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		fileIDsStr, _ := cmd.Flags().GetString("file-ids")
-		if fileIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --file-ids")
-			os.Exit(1)
-		}
-
-		// 解析 file-ids
-		fileIDs := []int64{}
-		for _, idStr := range strings.Split(fileIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的文件 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			fileIDs = append(fileIDs, id)
+		fileIDs, err := parseIDList(fileIDsStr, "file-ids")
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1258,17 +1062,16 @@ var repositoryFileDeleteCmd = &cobra.Command{
 			FileIDs:      fileIDs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 文件已移入回收站")
 		fmt.Fprintf(cmd.OutOrStdout(), "  删除数量: %d\n", result.SuccessCount)
+		return nil
 	},
 }
 
@@ -1284,33 +1087,16 @@ var repositoryTagDeleteCmd = &cobra.Command{
 示例：
   cbi repository tag-delete --repository-id 1 --tag-ids 5,10,15`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			os.Exit(1)
-		}
-
-		repositoryID, _ := cmd.Flags().GetInt64("repository-id")
-		if repositoryID == 0 {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --repository-id")
-			os.Exit(1)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
 		}
 
 		tagIDsStr, _ := cmd.Flags().GetString("tag-ids")
-		if tagIDsStr == "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 必须指定 --tag-ids")
-			os.Exit(1)
-		}
-
-		// 解析 tag-ids
-		tagIDs := []int64{}
-		for _, idStr := range strings.Split(tagIDsStr, ",") {
-			id, err := strconv.ParseInt(strings.TrimSpace(idStr), 10, 64)
-			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "错误: 无效的标签 ID - %s\n", idStr)
-				os.Exit(1)
-			}
-			tagIDs = append(tagIDs, id)
+		tagIDs, err := parseIDList(tagIDsStr, "tag-ids")
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1322,17 +1108,16 @@ var repositoryTagDeleteCmd = &cobra.Command{
 			TagIDs:       tagIDs,
 		})
 		if err != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if quiet {
-			outputData(cmd, result)
-			return
+			return outputData(cmd, result)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 标签删除成功")
 		fmt.Fprintf(cmd.OutOrStdout(), "  删除数量: %d\n", result.SuccessCount)
+		return nil
 	},
 }
 

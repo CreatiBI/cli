@@ -35,14 +35,10 @@ var authLoginCmd = &cobra.Command{
 前提条件：
   需要先使用 cbi config init 初始化应用凭证`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// 检查是否已初始化配置
 		if !config.Exists() {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 应用凭证未配置")
-			fmt.Fprintln(cmd.ErrOrStderr(), "")
-			fmt.Fprintln(cmd.ErrOrStderr(), "请先初始化配置:")
-			fmt.Fprintln(cmd.ErrOrStderr(), "  cbi config init")
-			os.Exit(1)
+			return cliErr.NewCLIError("CONFIG_NOT_FOUND", "应用凭证未配置，请先初始化: cbi config init")
 		}
 
 		// 选择登录模式
@@ -50,9 +46,9 @@ var authLoginCmd = &cobra.Command{
 
 		switch loginMode {
 		case "device":
-			loginWithDeviceCode(cmd)
+			return loginWithDeviceCode(cmd)
 		default:
-			loginWithOAuth(cmd)
+			return loginWithOAuth(cmd)
 		}
 	},
 }
@@ -95,17 +91,13 @@ func selectLoginMode(cmd *cobra.Command) string {
 }
 
 // loginWithOAuth OAuth 登录（授权码模式）
-func loginWithOAuth(cmd *cobra.Command) {
+func loginWithOAuth(cmd *cobra.Command) error {
 	// 初始化 OAuth 客户端
 	oauthClient := client.NewOAuthClient(nil)
 
 	// 检查 client_secret
 	if config.GetClientSecret() == "" {
-		fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_secret 未配置")
-		fmt.Fprintln(cmd.ErrOrStderr(), "")
-		fmt.Fprintln(cmd.ErrOrStderr(), "请重新初始化配置:")
-		fmt.Fprintln(cmd.ErrOrStderr(), "  cbi config init --new")
-		os.Exit(1)
+		return cliErr.NewCLIError("CONFIG_INCOMPLETE", "client_secret 未配置，请重新初始化: cbi config init --new")
 	}
 
 	// 创建上下文，支持 Ctrl+C 取消
@@ -123,32 +115,20 @@ func loginWithOAuth(cmd *cobra.Command) {
 
 	// 启动 OAuth 流程
 	if err := oauthClient.StartOAuthFlow(ctx); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// 登录成功后自动获取用户信息
-	accessToken := config.GetAPIKey()
-	userInfo, err := oauthClient.GetUserInfo(accessToken)
-	if err == nil {
-		fmt.Println()
-		fmt.Println("用户信息:")
-		fmt.Fprintf(cmd.OutOrStdout(), "  用户: %s\n", userInfo.Name)
-		fmt.Fprintf(cmd.OutOrStdout(), "  酅箱: %s\n", userInfo.Email)
-		fmt.Fprintf(cmd.OutOrStdout(), "  ID: %d\n", userInfo.ID)
-	} else {
-		if verbose {
-			fmt.Fprintf(cmd.ErrOrStderr(), "获取用户信息失败: %s\n", err.Error())
-		}
-	}
+	printUserInfo(oauthClient)
 
 	if verbose {
 		fmt.Fprintf(cmd.ErrOrStderr(), "配置文件: %s\n", config.GetConfigFile())
 	}
+	return nil
 }
 
 // loginWithDeviceCode 设备码登录
-func loginWithDeviceCode(cmd *cobra.Command) {
+func loginWithDeviceCode(cmd *cobra.Command) error {
 	// 初始化 OAuth 客户端
 	oauthClient := client.NewOAuthClient(nil)
 
@@ -167,27 +147,30 @@ func loginWithDeviceCode(cmd *cobra.Command) {
 
 	// 启动设备码流程
 	if err := oauthClient.StartDeviceCodeFlow(ctx); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	// 登录成功后自动获取用户信息
+	printUserInfo(oauthClient)
+
+	if verbose {
+		fmt.Fprintf(cmd.ErrOrStderr(), "配置文件: %s\n", config.GetConfigFile())
+	}
+	return nil
+}
+
+// printUserInfo 获取并打印用户信息
+func printUserInfo(oauthClient *client.OAuthClient) {
 	accessToken := config.GetAPIKey()
 	userInfo, err := oauthClient.GetUserInfo(accessToken)
 	if err == nil {
 		fmt.Println()
 		fmt.Println("用户信息:")
-		fmt.Fprintf(cmd.OutOrStdout(), "  用户: %s\n", userInfo.Name)
-		fmt.Fprintf(cmd.OutOrStdout(), "  酅箱: %s\n", userInfo.Email)
-		fmt.Fprintf(cmd.OutOrStdout(), "  ID: %d\n", userInfo.ID)
-	} else {
-		if verbose {
-			fmt.Fprintf(cmd.ErrOrStderr(), "获取用户信息失败: %s\n", err.Error())
-		}
-	}
-
-	if verbose {
-		fmt.Fprintf(cmd.ErrOrStderr(), "配置文件: %s\n", config.GetConfigFile())
+		fmt.Fprintf(os.Stdout, "  用户: %s\n", userInfo.Name)
+		fmt.Fprintf(os.Stdout, "  酅箱: %s\n", userInfo.Email)
+		fmt.Fprintf(os.Stdout, "  ID: %d\n", userInfo.ID)
+	} else if verbose {
+		fmt.Fprintf(os.Stderr, "获取用户信息失败: %s\n", err.Error())
 	}
 }
 
@@ -197,11 +180,9 @@ var authWhoamiCmd = &cobra.Command{
 	Short: "查看当前身份信息",
 	Long:  `显示当前登录用户的身份信息。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		// 检查是否登录
-		if !config.IsLoggedIn() {
-			fmt.Fprintln(cmd.ErrOrStderr(), cliErr.ErrAuthRequired.Error())
-			return
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireAuth(); err != nil {
+			return err
 		}
 
 		// 初始化 OAuth 客户端获取用户信息
@@ -211,14 +192,13 @@ var authWhoamiCmd = &cobra.Command{
 		// 获取用户信息
 		userInfo, err := oauthClient.GetUserInfo(accessToken)
 		if err != nil {
-			// 获取用户信息失败
 			if verbose {
 				fmt.Fprintf(cmd.ErrOrStderr(), "获取用户信息失败: %s\n", err.Error())
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "当前身份:")
 			fmt.Fprintf(cmd.OutOrStdout(), "  Access Token: %s\n", maskToken(accessToken))
 			fmt.Fprintf(cmd.OutOrStdout(), "  配置文件: %s\n", config.GetConfigFile())
-			return
+			return nil
 		}
 
 		// 显示用户信息
@@ -246,6 +226,7 @@ var authWhoamiCmd = &cobra.Command{
 				fmt.Fprintf(cmd.OutOrStdout(), "  Refresh Token: %s\n", maskToken(refreshToken))
 			}
 		}
+		return nil
 	},
 }
 
@@ -255,15 +236,14 @@ var authLogoutCmd = &cobra.Command{
 	Short: "退出登录",
 	Long:  `清除本地存储的认证信息。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		// 清除登录凭证
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Clear(); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "错误: %s\n", err.Error())
-			os.Exit(1)
+			return cliErr.WrapError(err, cliErr.NewCLIError("LOGOUT_FAILED", "退出登录失败"))
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ 已退出登录")
 		fmt.Fprintf(cmd.OutOrStdout(), "配置文件: %s\n", config.GetConfigFile())
+		return nil
 	},
 }
 

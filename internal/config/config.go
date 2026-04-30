@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	cliErr "github.com/CreatiBI/cli/internal/errors"
 )
 
 var (
@@ -71,12 +74,18 @@ func LoadAppConfig() (*AppConfig, error) {
 
 	data, err := os.ReadFile(ConfigFile)
 	if err != nil {
-		return nil, err
+		if os.IsNotExist(err) {
+			return nil, cliErr.ErrConfigNotFound
+		}
+		return nil, cliErr.WrapError(err, cliErr.ErrConfigInvalid)
 	}
 
 	var cfg AppConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		if strings.Contains(err.Error(), "unexpected") || strings.Contains(err.Error(), "invalid") {
+			return nil, cliErr.ErrConfigInvalid
+		}
+		return nil, cliErr.WrapError(err, cliErr.ErrConfigInvalid)
 	}
 
 	return &cfg, nil
@@ -88,10 +97,13 @@ func SaveAppConfig(cfg *AppConfig) error {
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return err
+		return cliErr.WrapError(err, cliErr.ErrConfigWriteFailed)
 	}
 
-	return os.WriteFile(ConfigFile, data, 0600)
+	if err := os.WriteFile(ConfigFile, data, 0600); err != nil {
+		return cliErr.WrapError(err, cliErr.ErrConfigWriteFailed)
+	}
+	return nil
 }
 
 // GetConfigFile 获取配置文件路径
@@ -220,7 +232,10 @@ func Clear() error {
 	cfg.TokenExpiresAt = time.Time{}
 	cfg.RefreshTokenExpiresAt = time.Time{}
 
-	return SaveAppConfig(cfg)
+	if err := SaveAppConfig(cfg); err != nil {
+		return cliErr.NewCLIErrorWithDetail("LOGOUT_FAILED", "退出登录失败", err.Error())
+	}
+	return nil
 }
 
 // GetUpdateLastCheckedAt 获取上次更新检查时间

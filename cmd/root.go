@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/CreatiBI/cli/internal/config"
+	cliErr "github.com/CreatiBI/cli/internal/errors"
 	"github.com/CreatiBI/cli/internal/update"
 )
 
@@ -41,8 +42,11 @@ var rootCmd = &cobra.Command{
 
 // Execute 执行根命令
 func Execute() {
+	rootCmd.SilenceUsage = true
+	rootCmd.SilenceErrors = true
+
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, cliErr.FormatError(err, verbose))
 		os.Exit(1)
 	}
 
@@ -67,7 +71,7 @@ func init() {
 }
 
 // outputData 输出数据（根据全局 format 参数）
-func outputData(cmd *cobra.Command, data interface{}) {
+func outputData(cmd *cobra.Command, data interface{}) error {
 	w := cmd.OutOrStdout()
 
 	encoder := json.NewEncoder(w)
@@ -75,7 +79,15 @@ func outputData(cmd *cobra.Command, data interface{}) {
 	encoder.SetIndent("", "  ")
 
 	if err := encoder.Encode(data); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-		os.Exit(1)
+		return cliErr.NewCLIErrorWithDetail("OUTPUT_ERROR", "数据输出失败", err.Error())
 	}
+	return nil
+}
+
+// requireAuth 检查登录状态，未登录时返回友好错误
+func requireAuth() error {
+	if !config.IsLoggedIn() {
+		return cliErr.ErrAuthRequired
+	}
+	return nil
 }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/CreatiBI/cli/internal/client"
 	"github.com/CreatiBI/cli/internal/config"
+	cliErr "github.com/CreatiBI/cli/internal/errors"
 )
 
 // configCmd 代表 config 命令
@@ -48,17 +49,13 @@ var configInitCmd = &cobra.Command{
 2. 获取 client_id 和 client_secret
 3. 使用此命令初始化本地配置`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// 检查是否需要强制覆盖
 		newFlag, _ := cmd.Flags().GetBool("new")
 
 		// 检查配置是否已存在
 		if config.Exists() && !newFlag {
-			fmt.Fprintln(cmd.ErrOrStderr(), "配置文件已存在:", config.GetConfigFile())
-			fmt.Fprintln(cmd.ErrOrStderr(), "")
-			fmt.Fprintln(cmd.ErrOrStderr(), "若需要重新初始化，请使用:")
-			fmt.Fprintln(cmd.ErrOrStderr(), "  cbi config init --new")
-			os.Exit(1)
+			return cliErr.NewCLIError("CONFIG_EXISTS", fmt.Sprintf("配置文件已存在: %s\n若需要重新初始化，请使用: cbi config init --new", config.GetConfigFile()))
 		}
 
 		// 检查是否指定设备码模式
@@ -83,19 +80,16 @@ var configInitCmd = &cobra.Command{
 			case "device":
 				credentials, err = initWithDeviceCode(cmd)
 			default:
-				fmt.Fprintln(cmd.ErrOrStderr(), "错误: 无效的模式选择")
-				os.Exit(1)
+				return cliErr.NewCLIError("INVALID_MODE", "无效的模式选择")
 			}
 		}
 
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "错误: %s\n", err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		if credentials == nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), "错误: 获取凭证失败")
-			os.Exit(1)
+			return cliErr.NewCLIError("CREDENTIAL_FAILED", "获取凭证失败")
 		}
 
 		// 写入配置
@@ -107,8 +101,7 @@ var configInitCmd = &cobra.Command{
 		}
 
 		if err := config.SaveAppConfig(cfg); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "错误: 写入配置失败 - %s\n", err.Error())
-			os.Exit(1)
+			return cliErr.WrapError(err, cliErr.ErrConfigWriteFailed)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "")
@@ -117,6 +110,7 @@ var configInitCmd = &cobra.Command{
 		fmt.Fprintln(cmd.OutOrStdout(), "")
 		fmt.Fprintln(cmd.OutOrStdout(), "下一步:")
 		fmt.Fprintln(cmd.OutOrStdout(), "  cbi auth login  # 使用 OAuth 登录")
+		return nil
 	},
 }
 
@@ -374,7 +368,7 @@ func promptForCredentials(cmd *cobra.Command) *Credential {
 	clientID = strings.TrimSpace(clientID)
 	if clientID == "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_id 不能为空")
-		os.Exit(1)
+		return nil
 	}
 
 	// 输入 client_secret
@@ -383,7 +377,7 @@ func promptForCredentials(cmd *cobra.Command) *Credential {
 	clientSecret = strings.TrimSpace(clientSecret)
 	if clientSecret == "" {
 		fmt.Fprintln(cmd.ErrOrStderr(), "错误: client_secret 不能为空")
-		os.Exit(1)
+		return nil
 	}
 
 	// 输入 base_url（可选，有默认值）
@@ -413,21 +407,16 @@ var configShowCmd = &cobra.Command{
 	Short: "显示当前配置",
 	Long:  `显示当前生效的配置信息（敏感字段脱敏显示）。`,
 	Args:  cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// 检查配置是否存在
 		if !config.Exists() {
-			fmt.Fprintln(cmd.ErrOrStderr(), "配置文件不存在")
-			fmt.Fprintln(cmd.ErrOrStderr(), "")
-			fmt.Fprintln(cmd.ErrOrStderr(), "请先初始化配置:")
-			fmt.Fprintln(cmd.ErrOrStderr(), "  cbi config init")
-			os.Exit(1)
+			return cliErr.ErrConfigNotFound
 		}
 
 		// 读取配置
 		cfg, err := config.LoadAppConfig()
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "错误: 读取配置失败 - %s\n", err.Error())
-			os.Exit(1)
+			return err
 		}
 
 		// 显示配置（脱敏）
@@ -458,6 +447,7 @@ var configShowCmd = &cobra.Command{
 		if format == "json" {
 			outputConfigJSON(cmd, cfg)
 		}
+		return nil
 	},
 }
 
