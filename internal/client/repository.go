@@ -1490,3 +1490,257 @@ type HighlightClipDetail struct {
 	Tags           []Tag        `json:"tags"`
 	Products       []Product    `json:"products"`
 }
+
+// ListHighlightClips 获取爆点片段列表
+func (c *RepositoryClient) ListHighlightClips(ctx context.Context, req *HighlightClipListRequest) (*HighlightClipListResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"repositoryId": req.RepositoryID,
+	}
+	if req.Keyword != "" {
+		body["keyword"] = req.Keyword
+	}
+	if req.SourceVideoID > 0 {
+		body["sourceVideoId"] = req.SourceVideoID
+	}
+	if req.Page > 0 {
+		body["page"] = req.Page
+	}
+	if req.PageSize > 0 {
+		body["pageSize"] = req.PageSize
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/repository/highlight-clip/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误（可能 token 过期）
+	if resp.StatusCode() == 500 {
+		return nil, handle500Error(resp.Body())
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		// 特殊处理 token 过期错误
+		if isTokenExpiredError(codeVal, message) {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIErrorWithDetail("HIGHLIGHT_CLIP_LIST_ERROR",
+			fmt.Sprintf("获取爆点片段列表失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	listResult := &HighlightClipListResult{
+		Total:    data.Get("total").Int(),
+		Page:     int(data.Get("page").Int()),
+		PageSize: int(data.Get("pageSize").Int()),
+	}
+
+	// 解析 clips 列表
+	data.Get("clips").ForEach(func(_, clip gjson.Result) bool {
+		item := HighlightClip{
+			ID:           clip.Get("id").Int(),
+			Name:         clip.Get("name").String(),
+			PlayUrl:      clip.Get("playUrl").String(),
+			Cover:        clip.Get("cover").String(),
+			Duration:     clip.Get("duration").String(),
+			AnalysisInfo: clip.Get("analysisInfo").String(),
+			GenerateType: int(clip.Get("generateType").Int()),
+			CreatedAt:    clip.Get("createdAt").Int(),
+			ClipStartSec: int(clip.Get("clipStartSec").Int()),
+			ClipEndSec:   int(clip.Get("clipEndSec").Int()),
+		}
+
+		// 解析 sourceVideo
+		sourceVideo := clip.Get("sourceVideo")
+		if sourceVideo.Exists() && sourceVideo.IsObject() {
+			item.SourceVideo = &SourceVideo{
+				ID:          sourceVideo.Get("id").Int(),
+				Name:        sourceVideo.Get("name").String(),
+				Cover:       sourceVideo.Get("cover").String(),
+				FileViewUrl: sourceVideo.Get("fileViewUrl").String(),
+			}
+		}
+
+		// 解析 creator
+		creator := clip.Get("creator")
+		if creator.Exists() && creator.IsObject() {
+			item.Creator = &CreatorInfo{
+				ID:     creator.Get("id").Int(),
+				Name:   creator.Get("name").String(),
+				Avatar: creator.Get("avatar").String(),
+			}
+		}
+
+		listResult.Clips = append(listResult.Clips, item)
+		return true
+	})
+
+	return listResult, nil
+}
+
+// GetHighlightClipDetail 获取爆点片段详情
+func (c *RepositoryClient) GetHighlightClipDetail(ctx context.Context, clipID int64) (*HighlightClipDetail, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(map[string]interface{}{
+			"clipId": clipID,
+		}).
+		Post("/openapi/v1/repository/highlight-clip/detail")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误（可能 token 过期）
+	if resp.StatusCode() == 500 {
+		return nil, handle500Error(resp.Body())
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		// 特殊处理 token 过期错误
+		if isTokenExpiredError(codeVal, message) {
+			return nil, cliErr.ErrTokenExpired
+		}
+		// 特殊处理非爆点片段错误
+		if strings.Contains(message, "is not a highlight clip") {
+			return nil, cliErr.NewCLIErrorWithDetail("NOT_HIGHLIGHT_CLIP",
+				"该文件不是爆点片段", message)
+		}
+		return nil, cliErr.NewCLIErrorWithDetail("HIGHLIGHT_CLIP_DETAIL_ERROR",
+			fmt.Sprintf("获取爆点片段详情失败 (%d)", codeVal), message)
+	}
+
+	clipData := result.Get("data.clip")
+	detail := &HighlightClipDetail{
+		ID:             clipData.Get("id").Int(),
+		RepositoryID:   clipData.Get("repositoryId").Int(),
+		Name:           clipData.Get("name").String(),
+		Cover:          clipData.Get("cover").String(),
+		FileOriginUrl:  clipData.Get("fileOriginUrl").String(),
+		FileViewUrl:    clipData.Get("fileViewUrl").String(),
+		Duration:       clipData.Get("duration").String(),
+		Format:         clipData.Get("format").String(),
+		Resolution:     clipData.Get("resolution").String(),
+		Ratio:          clipData.Get("ratio").String(),
+		FrameRate:      clipData.Get("frameRate").String(),
+		Size:           clipData.Get("size").String(),
+		SizeInByte:     clipData.Get("sizeInByte").Int(),
+		Score:          int(clipData.Get("score").Int()),
+		Notes:          clipData.Get("notes").String(),
+		AnalysisInfo:   clipData.Get("analysisInfo").String(),
+		GenerateType:   int(clipData.Get("generateType").Int()),
+		Title:          clipData.Get("title").String(),
+		Analysis:       clipData.Get("analysis").String(),
+		CreatedAt:      clipData.Get("createdAt").Int(),
+		UpdatedAt:      clipData.Get("updatedAt").Int(),
+		ClipStartFrame: int(clipData.Get("clipStartFrame").Int()),
+		ClipEndFrame:   int(clipData.Get("clipEndFrame").Int()),
+		ClipStartSec:   int(clipData.Get("clipStartSec").Int()),
+		ClipEndSec:     int(clipData.Get("clipEndSec").Int()),
+	}
+
+	// 解析 sourceVideo
+	sourceVideo := clipData.Get("sourceVideo")
+	if sourceVideo.Exists() && sourceVideo.IsObject() {
+		detail.SourceVideo = &SourceVideo{
+			ID:          sourceVideo.Get("id").Int(),
+			Name:        sourceVideo.Get("name").String(),
+			Cover:       sourceVideo.Get("cover").String(),
+			FileViewUrl: sourceVideo.Get("fileViewUrl").String(),
+			Duration:    sourceVideo.Get("duration").String(),
+		}
+	}
+
+	// 解析 creator
+	creator := clipData.Get("creator")
+	if creator.Exists() && creator.IsObject() {
+		detail.Creator = &CreatorInfo{
+			ID:     creator.Get("id").Int(),
+			Name:   creator.Get("name").String(),
+			Email:  creator.Get("email").String(),
+			Avatar: creator.Get("avatar").String(),
+		}
+	}
+
+	// 解析 tags
+	clipData.Get("tags").ForEach(func(_, tag gjson.Result) bool {
+		detail.Tags = append(detail.Tags, Tag{
+			ID:    tag.Get("id").Int(),
+			Name:  tag.Get("name").String(),
+			Color: tag.Get("color").String(),
+		})
+		return true
+	})
+
+	// 解析 products
+	clipData.Get("products").ForEach(func(_, prod gjson.Result) bool {
+		detail.Products = append(detail.Products, Product{
+			ID:   prod.Get("id").Int(),
+			Name: prod.Get("name").String(),
+			Img:  prod.Get("img").String(),
+			URL:  prod.Get("url").String(),
+		})
+		return true
+	})
+
+	return detail, nil
+}
+
+// handle500Error 处理 500 错误，检查是否 token 过期
+func handle500Error(body []byte) error {
+	result := gjson.ParseBytes(body)
+	message := result.Get("message").String()
+
+	// 检查是否是 token 过期相关错误
+	lowerMsg := strings.ToLower(message)
+	if strings.Contains(lowerMsg, "token") ||
+		strings.Contains(lowerMsg, "expired") ||
+		strings.Contains(lowerMsg, "auth failed") ||
+		strings.Contains(lowerMsg, "unauthorized") ||
+		strings.Contains(lowerMsg, "authentication expired") {
+		return cliErr.ErrTokenExpired
+	}
+
+	return cliErr.NewCLIErrorWithDetail("UPSTREAM_ERROR",
+		"服务器内部错误 (500)", message)
+}
+
+// isTokenExpiredError 判断是否是 token 过期错误
+func isTokenExpiredError(code int64, message string) bool {
+	// 常见 token 过期错误码和消息模式
+	if code == 401 || code == 403 {
+		return true
+	}
+	lowerMsg := strings.ToLower(message)
+	return strings.Contains(lowerMsg, "token expired") ||
+		strings.Contains(lowerMsg, "invalid token") ||
+		strings.Contains(lowerMsg, "authentication failed") ||
+		strings.Contains(lowerMsg, "授权已过期") ||
+		strings.Contains(lowerMsg, "token无效")
+}
