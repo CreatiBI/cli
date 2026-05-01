@@ -1176,6 +1176,40 @@ var repositoryHighlightClipListCmd = &cobra.Command{
 	},
 }
 
+// repositoryHighlightClipDetailCmd 爆点片段详情
+var repositoryHighlightClipDetailCmd = &cobra.Command{
+	Use:   "highlight-clip-detail <clip-id>",
+	Short: "获取爆点片段详情",
+	Long: `获取爆点片段的完整详情信息。
+
+示例：
+  cbi repository highlight-clip-detail 123
+  cbi repository highlight-clip-detail 123 --format json`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		clipID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			return cliErr.NewCLIError("INVALID_CLIP_ID", fmt.Sprintf("无效的爆点片段 ID - %s", args[0]))
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		detail, err := repoClient.GetHighlightClipDetail(ctx, clipID)
+		if err != nil {
+			return err
+		}
+
+		if quiet || format == "json" {
+			return outputData(cmd, detail)
+		}
+
+		printHighlightClipDetail(cmd, detail)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(repositoryCmd)
 	repositoryCmd.AddCommand(repositoryListCmd)
@@ -1199,6 +1233,7 @@ func init() {
 	repositoryCmd.AddCommand(repositoryFileDeleteCmd)
 	repositoryCmd.AddCommand(repositoryTagDeleteCmd)
 	repositoryCmd.AddCommand(repositoryHighlightClipListCmd)
+	repositoryCmd.AddCommand(repositoryHighlightClipDetailCmd)
 
 	// folders 命令参数
 	repositoryFoldersCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
@@ -1597,4 +1632,111 @@ func printHighlightClipListTable(cmd *cobra.Command, result *client.HighlightCli
 	}
 
 	t.Render()
+}
+
+// printHighlightClipDetail 打印爆点片段详情
+func printHighlightClipDetail(cmd *cobra.Command, detail *client.HighlightClipDetail) {
+	out := cmd.OutOrStdout()
+
+	fmt.Fprintln(out, "爆点片段详情:")
+	fmt.Fprintf(out, "  ID:           %d\n", detail.ID)
+	fmt.Fprintf(out, "  名称:         %s\n", detail.Name)
+	fmt.Fprintf(out, "  档案库 ID:    %d\n", detail.RepositoryID)
+	fmt.Fprintf(out, "  格式:         %s\n", detail.Format)
+	fmt.Fprintf(out, "  大小:         %s (%d bytes)\n", detail.Size, detail.SizeInByte)
+
+	if detail.Duration != "" {
+		fmt.Fprintf(out, "  时长:         %s\n", detail.Duration)
+	}
+	if detail.Resolution != "" {
+		fmt.Fprintf(out, "  分辨率:       %s\n", detail.Resolution)
+	}
+	if detail.Ratio != "" {
+		fmt.Fprintf(out, "  比例:         %s\n", detail.Ratio)
+	}
+	if detail.FrameRate != "" {
+		fmt.Fprintf(out, "  帧率:         %s\n", detail.FrameRate)
+	}
+	if detail.Score > 0 {
+		fmt.Fprintf(out, "  评分:         %d\n", detail.Score)
+	}
+	if detail.Notes != "" {
+		fmt.Fprintf(out, "  备注:         %s\n", detail.Notes)
+	}
+
+	// 爆点特有字段
+	if detail.Title != "" {
+		fmt.Fprintf(out, "  爆点标题:     %s\n", detail.Title)
+	}
+	if detail.Analysis != "" {
+		fmt.Fprintf(out, "  爆点分析:     %s\n", detail.Analysis)
+	}
+	if detail.GenerateType == 1 {
+		fmt.Fprintf(out, "  生成方式:     AI 生成\n")
+	} else {
+		fmt.Fprintf(out, "  生成方式:     手动\n")
+	}
+
+	// 片段范围
+	fmt.Fprintf(out, "  片段范围:     %d-%d 秒 (帧 %d-%d)\n",
+		detail.ClipStartSec, detail.ClipEndSec,
+		detail.ClipStartFrame, detail.ClipEndFrame)
+
+	if detail.CreatedAt > 0 {
+		fmt.Fprintf(out, "  创建时间:     %s\n", time.Unix(detail.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+	}
+	if detail.UpdatedAt > 0 {
+		fmt.Fprintf(out, "  更新时间:     %s\n", time.Unix(detail.UpdatedAt, 0).Format("2006-01-02 15:04:05"))
+	}
+
+	if detail.Cover != "" {
+		fmt.Fprintf(out, "  封面 URL:     %s\n", detail.Cover)
+	}
+	if detail.FileOriginUrl != "" {
+		fmt.Fprintf(out, "  原始文件 URL: %s\n", detail.FileOriginUrl)
+	}
+	if detail.FileViewUrl != "" {
+		fmt.Fprintf(out, "  预览 URL:     %s\n", detail.FileViewUrl)
+	}
+
+	// 来源视频
+	if detail.SourceVideo != nil {
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "来源视频:")
+		fmt.Fprintf(out, "  ID:     %d\n", detail.SourceVideo.ID)
+		fmt.Fprintf(out, "  名称:   %s\n", detail.SourceVideo.Name)
+		if detail.SourceVideo.Duration != "" {
+			fmt.Fprintf(out, "  时长:   %s\n", detail.SourceVideo.Duration)
+		}
+		if detail.SourceVideo.FileViewUrl != "" {
+			fmt.Fprintf(out, "  预览:   %s\n", detail.SourceVideo.FileViewUrl)
+		}
+	}
+
+	// 创建者
+	if detail.Creator != nil {
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "创建者:")
+		fmt.Fprintf(out, "  姓名:   %s\n", detail.Creator.Name)
+		fmt.Fprintf(out, "  邮箱:   %s\n", detail.Creator.Email)
+		fmt.Fprintf(out, "  ID:     %d\n", detail.Creator.ID)
+	}
+
+	// 标签
+	if len(detail.Tags) > 0 {
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "标签:")
+		for _, t := range detail.Tags {
+			fmt.Fprintf(out, "  - %s (ID: %d, 颜色: %s)\n", t.Name, t.ID, t.Color)
+		}
+	}
+
+	// 产品
+	if len(detail.Products) > 0 {
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "关联产品:")
+		for _, p := range detail.Products {
+			fmt.Fprintf(out, "  - %s (ID: %d)\n", p.Name, p.ID)
+		}
+	}
 }
