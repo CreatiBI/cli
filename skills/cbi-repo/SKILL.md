@@ -37,6 +37,10 @@ trigger:
   - "删除文件"
   - "删除标签"
   - "移入回收站"
+  - "爆点片段"
+  - "highlight clip"
+  - "highlight-clip-list"
+  - "highlight-clip-detail"
 depends_on:
   - cbi-shared
 ---
@@ -86,6 +90,8 @@ depends_on:
 | 移除关联产品 | `cbi repository file-product-remove --repository-id <id> --file-id <fid> --product-ids <ids>` |
 | 删除产品 | `cbi repository product-delete --repository-id <id> --product-ids <ids>` |
 | 删除文件到回收站 | `cbi repository file-delete --repository-id <id> --file-ids <ids>` |
+| 爆点片段列表 | `cbi repository highlight-clip-list --repository-id <id>` |
+| 爆点片段详情 | `cbi repository highlight-clip-detail <clip-id>` |
 
 ---
 
@@ -480,3 +486,61 @@ cbi repository file-delete --repository-id <id> --file-ids 123,124,125
 ### 权限不足/未登录
 
 遇到权限错误时，自动引导用户完成认证（依赖 `cbi-shared` 处理），用自然语言提示如"你需要先登录，我来帮你完成"。
+
+---
+
+## 爆点片段管理
+
+### 获取爆点片段列表
+
+```bash
+# 列出素材库所有爆点片段
+cbi repository highlight-clip-list --repository-id <id>
+
+# 搜索关键词
+cbi repository highlight-clip-list --repository-id <id> --keyword "高光"
+
+# 筛选指定来源视频
+cbi repository highlight-clip-list --repository-id <id> --source-video-id 456
+
+# 分页查询
+cbi repository highlight-clip-list --repository-id <id> --page 2 --pageSize 30
+
+# JSON 格式
+cbi repository highlight-clip-list --repository-id <id> --format json
+```
+
+**参数：**
+- `--repository-id`: 素材库 ID（必填）
+- `--keyword`: 搜索关键词（匹配爆点片段名称）
+- `--source-video-id`: 来源视频 ID（筛选指定视频下的爆点片段）
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+**输出字段：**
+- ID、名称、播放地址、封面、时长
+- 分析信息（analysisInfo）
+- 生成方式（generateType）：1=AI生成，0=手动
+- 来源视频信息（可能为空）
+- 片段范围（clipStartSec、clipEndSec）
+- 创建者信息（可能为空）
+
+### 获取爆点片段详情
+
+```bash
+cbi repository highlight-clip-detail <clip-id>
+cbi repository highlight-clip-detail <clip-id> --format json
+```
+
+**输出信息包括：**
+- 基本信息：ID、名称、格式、大小、时长、分辨率、比例、帧率、评分、备注
+- 爆点特有：爆点标题、爆点分析、生成方式、片段范围（秒和帧）
+- 来源视频信息（可能为空）
+- 创建者信息（可能为空）
+- 标签列表
+- 关联产品列表
+- 各种 URL：封面、原始文件、预览
+
+**注意：**
+- clipId 必须是爆点片段类型的文件
+- 如果文件不是爆点片段，会返回错误
