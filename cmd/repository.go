@@ -1121,6 +1121,61 @@ var repositoryTagDeleteCmd = &cobra.Command{
 	},
 }
 
+// repositoryHighlightClipListCmd 爆点片段列表
+var repositoryHighlightClipListCmd = &cobra.Command{
+	Use:   "highlight-clip-list",
+	Short: "获取爆点片段列表",
+	Long: `获取素材库中的爆点片段列表。
+
+筛选参数：
+  --keyword       搜索关键词（匹配爆点片段名称）
+  --source-video-id 筛选指定来源视频的爆点片段
+
+示例：
+  cbi repository highlight-clip-list --repository-id 1
+  cbi repository highlight-clip-list --repository-id 1 --keyword "高光"
+  cbi repository highlight-clip-list --repository-id 1 --source-video-id 456`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		repositoryID, err := requireRepositoryID(cmd)
+		if err != nil {
+			return err
+		}
+
+		keyword, _ := cmd.Flags().GetString("keyword")
+		sourceVideoID, _ := cmd.Flags().GetInt64("source-video-id")
+		page, _ := cmd.Flags().GetInt("page")
+		pageSize, _ := cmd.Flags().GetInt("pageSize")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		repoClient := client.NewRepositoryClient()
+		result, err := repoClient.ListHighlightClips(ctx, &client.HighlightClipListRequest{
+			RepositoryID:  repositoryID,
+			Keyword:       keyword,
+			SourceVideoID: sourceVideoID,
+			Page:          page,
+			PageSize:      pageSize,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printHighlightClipListTable(cmd, result)
+			return nil
+		}
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(repositoryCmd)
 	repositoryCmd.AddCommand(repositoryListCmd)
@@ -1143,6 +1198,7 @@ func init() {
 	repositoryCmd.AddCommand(repositoryProductDeleteCmd)
 	repositoryCmd.AddCommand(repositoryFileDeleteCmd)
 	repositoryCmd.AddCommand(repositoryTagDeleteCmd)
+	repositoryCmd.AddCommand(repositoryHighlightClipListCmd)
 
 	// folders 命令参数
 	repositoryFoldersCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
@@ -1241,6 +1297,13 @@ func init() {
 	// tag-delete 命令参数
 	repositoryTagDeleteCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
 	repositoryTagDeleteCmd.Flags().String("tag-ids", "", "标签 ID 列表（逗号分隔，必填）")
+
+	// highlight-clip-list 命令参数
+	repositoryHighlightClipListCmd.Flags().Int64("repository-id", 0, "素材库 ID（必填）")
+	repositoryHighlightClipListCmd.Flags().String("keyword", "", "搜索关键词（匹配名称）")
+	repositoryHighlightClipListCmd.Flags().Int64("source-video-id", 0, "来源视频 ID")
+	repositoryHighlightClipListCmd.Flags().Int("page", 1, "页码（默认 1）")
+	repositoryHighlightClipListCmd.Flags().Int("pageSize", 20, "每页条数（默认 20，最大 50）")
 }
 
 // calculateFileMD5 计算文件 MD5
@@ -1496,6 +1559,41 @@ func printProductListTable(cmd *cobra.Command, products []client.Product) {
 			typeStr = "商品"
 		}
 		t.AppendRow(fmt.Sprintf("%d", p.ID), p.Name, typeStr, p.URL, p.Description)
+	}
+
+	t.Render()
+}
+
+// printHighlightClipListTable 打印爆点片段列表表格
+func printHighlightClipListTable(cmd *cobra.Command, result *client.HighlightClipListResult) {
+	out := cmd.OutOrStdout()
+
+	if len(result.Clips) == 0 {
+		fmt.Fprintln(out, "无爆点片段")
+		return
+	}
+
+	totalPages := result.Total / int64(result.PageSize)
+	if result.Total%int64(result.PageSize) > 0 {
+		totalPages++
+	}
+	fmt.Fprintf(out, "共 %d 条，第 %d/%d 页\n\n", result.Total, result.Page, totalPages)
+
+	t := output.NewTableWriter(out)
+	t.AppendHeader("ID", "名称", "时长", "来源视频", "创建时间")
+
+	for _, clip := range result.Clips {
+		sourceVideoName := ""
+		if clip.SourceVideo != nil {
+			sourceVideoName = clip.SourceVideo.Name
+		}
+
+		createTime := ""
+		if clip.CreatedAt > 0 {
+			createTime = time.Unix(clip.CreatedAt, 0).Format("2006-01-02 15:04")
+		}
+
+		t.AppendRow(fmt.Sprintf("%d", clip.ID), clip.Name, clip.Duration, sourceVideoName, createTime)
 	}
 
 	t.Render()
