@@ -1415,3 +1415,78 @@ func (c *RepositoryClient) DeleteTags(ctx context.Context, req *DeleteTagsReques
 		SuccessCount: int(data.Get("successCount").Int()),
 	}, nil
 }
+
+// HighlightClip 爆点片段（列表项）
+type HighlightClip struct {
+	ID           int64        `json:"id"`
+	Name         string       `json:"name"`
+	PlayUrl      string       `json:"playUrl"`
+	Cover        string       `json:"cover"`
+	Duration     string       `json:"duration"`
+	AnalysisInfo string       `json:"analysisInfo"`
+	GenerateType int          `json:"generateType"` // 1=AI生成, 0=手动
+	CreatedAt    int64        `json:"createdAt"`
+	SourceVideo  *SourceVideo `json:"sourceVideo,omitempty"`
+	ClipStartSec int          `json:"clipStartSec"`
+	ClipEndSec   int          `json:"clipEndSec"`
+	Creator      *CreatorInfo `json:"creator,omitempty"`
+}
+
+// SourceVideo 来源视频信息
+type SourceVideo struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Cover       string `json:"cover"`
+	FileViewUrl string `json:"fileViewUrl"`
+	Duration    string `json:"duration,omitempty"` // 详情接口才有
+}
+
+// HighlightClipListRequest 爆点片段列表请求
+type HighlightClipListRequest struct {
+	RepositoryID  int64
+	Keyword       string
+	SourceVideoID int64
+	Page          int
+	PageSize      int
+}
+
+// HighlightClipListResult 爆点片段列表结果
+type HighlightClipListResult struct {
+	Clips    []HighlightClip `json:"clips"`
+	Total    int64           `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"pageSize"`
+}
+
+// HighlightClipDetail 爆点片段详情
+type HighlightClipDetail struct {
+	ID             int64        `json:"id"`
+	RepositoryID   int64        `json:"repositoryId"`
+	Name           string       `json:"name"`
+	Cover          string       `json:"cover"`
+	FileOriginUrl  string       `json:"fileOriginUrl"`
+	FileViewUrl    string       `json:"fileViewUrl"`
+	Duration       string       `json:"duration"`
+	Format         string       `json:"format"`
+	Resolution     string       `json:"resolution"`
+	Ratio          string       `json:"ratio"`
+	FrameRate      string       `json:"frameRate"`
+	Size           string       `json:"size"`
+	SizeInByte     int64        `json:"sizeInByte"`
+	Score          int          `json:"score"`
+	Notes          string       `json:"notes"`
+	AnalysisInfo   string       `json:"analysisInfo"`
+	GenerateType   int          `json:"generateType"`
+	Title          string       `json:"title"`
+	Analysis       string       `json:"analysis"`
+	CreatedAt      int64        `json:"createdAt"`
+	UpdatedAt      int64        `json:"updatedAt"`
+	SourceVideo    *SourceVideo `json:"sourceVideo,omitempty"`
+	ClipStartFrame int          `json:"clipStartFrame"`
+	ClipEndFrame   int          `json:"clipEndFrame"`
+	ClipStartSec   int          `json:"clipStartSec"`
+	ClipEndSec     int          `json:"clipEndSec"`
+	Creator        *CreatorInfo `json:"creator,omitempty"`
+	Tags           []Tag        `json:"tags"`
+	Products       []Product    `json:"products"`
+}
