@@ -1,6 +1,6 @@
 ---
 name: cbi-repo
-description: 使用 CreatiBI CLI（cbi）管理素材库文件、文件夹、标签、关联产品、视频理解信号、AI 视频分析结果和爆点片段；在用户提到上传到素材库、查询文件列表或详情、查看信号或分镜表、维护素材元数据、先初始化 cbi 或先登录再操作等场景时使用。
+description: 使用 CreatiBI CLI（cbi）管理素材库与专案能力，包括文件、文件夹、标签、关联产品、视频理解信号、AI 视频分析结果、爆点片段、专案列表与创建、专案脚本列表、专案素材列表；在用户提到上传到素材库、查询文件或专案、查看信号或分镜表、维护素材元数据、先初始化 cbi 或先登录再操作等场景时使用。
 trigger:
   - "cbi"
   - "素材库"
@@ -47,13 +47,25 @@ trigger:
   - "highlight clip"
   - "highlight-clip-list"
   - "highlight-clip-detail"
+  - "专案"
+  - "项目"
+  - "project"
+  - "cbi project"
+  - "project list"
+  - "project create"
+  - "project script-list"
+  - "project material-list"
+  - "专案列表"
+  - "创建专案"
+  - "专案脚本"
+  - "专案素材"
 depends_on:
   - cbi-shared
 ---
 
 # CreatiBI CLI 素材库管理
 
-负责素材库的查询、上传与元数据维护。详情字段中的 `signals` 和 `analysis` 定义见 [references/video-intelligence.md](references/video-intelligence.md)。
+负责素材库与专案能力的查询、上传与元数据维护。`signals` 和 `analysis` 定义见 [references/video-intelligence.md](references/video-intelligence.md)，专案字段见 [references/project.md](references/project.md)。
 
 ## 交互规范
 
@@ -66,8 +78,9 @@ depends_on:
 
 1. 先确认已初始化并登录。
 2. 再按任务类型选择查询、上传或修改。
-3. 文件详情优先看基础信息，再按需展开 `signals`、`analysis` 或爆点片段。
-4. 部分失败时继续处理后续条目，最后汇总成功、失败和原因。
+3. 资产域任务先确认 `repository-id`，专案域任务先确认 `project-id` 或 `team-id`。
+4. 文件详情优先看基础信息，再按需展开 `signals`、`analysis` 或爆点片段。
+5. 部分失败时继续处理后续条目，最后汇总成功、失败和原因。
 
 ## 术语
 
@@ -85,6 +98,10 @@ depends_on:
 | 文件查重 | 上传前确认是否已存在 |
 | 文件上传 | 将本地文件入库 |
 | 爆点片段 | 查看 AI 生成或人工维护的高光片段 |
+| 专案列表 | 按关键词、可见范围、团队或作品集筛选 |
+| 创建专案 | 按团队创建公开或私有专案，并可设置日期范围 |
+| 专案脚本列表 | 按状态、关键词、父任务和归档状态筛选 |
+| 专案素材列表 | 按关键词检索专案下视频/图片素材 |
 
 ## 查询规则
 
@@ -97,6 +114,15 @@ depends_on:
 - 上传、改名、改备注、改评分、加标签、加文件夹、加产品前，先确认目标素材库和文件 ID。
 - 重复上传默认跳过；需要强制写入时先向用户确认。
 - 删除类操作默认按最小风险表达，明确说明影响范围。
+- 创建专案前先确认团队 ID、专案名称和隐私级别（1=公开，2=私有）。
+
+## 专案规则
+
+- `project list` 支持关键词、`scope`、`team-ids`、`portfolio-ids` 和分页。
+- `project create` 需要 `team-id` 与 `name`，可选 `privacy`、`description`、`template-id`、`deadline-start`、`deadline-end`。
+- `project script-list` 重点筛选字段：`state`、`parent-id`、`is-archived`。
+- `project material-list` 重点筛选字段：`keyword` 与分页；素材类型通常为 1=视频、2=图片。
+- 当用户提到“我加入的专案”，将 `scope` 设为 `1`；未指定时默认全可见范围。
 
 ## 内部命令骨架
 
@@ -108,9 +134,14 @@ cbi repository file-check --repository-id <id> --file <path>
 cbi repository file-create --repository-id <id> --file <path>
 cbi repository highlight-clip-list --repository-id <id>
 cbi repository highlight-clip-detail <clip-id>
+cbi project list
+cbi project create --team-id <id> --name "<name>"
+cbi project script-list --project-id <id>
+cbi project material-list --project-id <id>
 ```
 
 ## 参考
 
 - [references/video-intelligence.md](references/video-intelligence.md)
+- [references/project.md](references/project.md)
 - 仓库根目录 `README.md` 的素材库章节
