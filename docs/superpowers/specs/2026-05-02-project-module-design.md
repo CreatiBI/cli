@@ -88,18 +88,19 @@ type ProjectCreateResult struct {
 
 // Script 脚本
 type Script struct {
-    ID              int64        `json:"id"`
-    Name            string       `json:"name"`
-    State           int          `json:"state"`
-    Creator         *CreatorInfo `json:"creator,omitempty"`
-    AssignedWriter  *CreatorInfo `json:"assignedWriter,omitempty"`
-    AssignedDesigner *CreatorInfo `json:"assignedDesigner,omitempty"`
-    DueDate         string       `json:"dueDate"`
-    CreatedAt       string       `json:"createdAt"`
-    ParentId        int64        `json:"parentId"`
-    CurrentVersionNo int         `json:"currentVersionNo"`
-    TableIdValue    int64        `json:"tableIdValue"`
-    AiGenerate      int          `json:"aiGenerate"`
+    ID              int64              `json:"id"`
+    Name            string             `json:"name"`
+    State           int                `json:"state"`
+    Creator         *CreatorInfo       `json:"creator,omitempty"`
+    AssignedWriter  *CreatorInfo       `json:"assignedWriter,omitempty"`
+    AssignedDesigner *CreatorInfo      `json:"assignedDesigner,omitempty"`
+    DueDate         string             `json:"dueDate"`
+    CreatedAt       string             `json:"createdAt"`
+    ParentId        int64              `json:"parentId"`
+    CurrentVersionNo int               `json:"currentVersionNo"`
+    TableIdValue    int64              `json:"tableIdValue"`
+    AiGenerate      int                `json:"aiGenerate"`
+    CustomFields     map[string]string `json:"customFields"`  // 自定义字段值，key=fieldName，value=JSON字符串
 }
 
 // ScriptListRequest 脚本列表请求
@@ -115,43 +116,44 @@ type ScriptListRequest struct {
 
 // ScriptListResult 脚本列表结果
 type ScriptListResult struct {
-    Scripts   []Script `json:"scripts"`
-    Total     int64    `json:"total"`
-    Page      int      `json:"page"`
-    PageSize  int      `json:"pageSize"`
-    Fields    []Field  `json:"fields"`
+    Scripts   []Script    `json:"scripts"`
+    Total     int64       `json:"total"`
+    Page      int         `json:"page"`
+    PageSize  int         `json:"pageSize"`
+    Fields    []FieldDef  `json:"fields"`  // 字段定义列表
 }
 
-// Field 字段定义
-type Field struct {
-    FieldName     string `json:"fieldName"`
-    ViewName      string `json:"viewName"`
-    FieldType     int    `json:"fieldType"`
-    Classify      int    `json:"classify"`  // 1=固定, 2=固有, 3=自定义
-    IsShow        int    `json:"isShow"`
-    FieldSettings string `json:"fieldSettings"`
-    IsLazy        int    `json:"isLazy"`
+// FieldDef 字段定义（脚本和素材共用）
+type FieldDef struct {
+    FieldName     string `json:"fieldName"`     // 字段名称
+    ViewName      string `json:"viewName"`      // 显示名称
+    FieldType     int    `json:"fieldType"`     // 字段类型
+    Classify      int    `json:"classify"`      // 分类：1=固定字段，2=固有字段，3=自定义字段
+    IsShow        int    `json:"isShow"`        // 是否显示
+    FieldSettings string `json:"fieldSettings"` // 字段配置（JSON字符串）
+    IsLazy        int    `json:"isLazy"`        // 是否懒加载
 }
 
 // Material 素材
 type Material struct {
-    ID         int64        `json:"id"`
-    Name       string       `json:"name"`
-    FileType   int          `json:"fileType"`  // 1=视频, 2=图片
-    Format     string       `json:"format"`
-    Duration   string       `json:"duration"`
-    Resolution string       `json:"resolution"`
-    Cover      string       `json:"cover"`
-    PlayUrl    string       `json:"playUrl"`
-    Ratio      float64      `json:"ratio"`
-    FileSize   int64        `json:"fileSize"`
-    Rating     int          `json:"rating"`
-    Status     int          `json:"status"`
-    ScriptId   int64        `json:"scriptId"`
-    Creator    *CreatorInfo `json:"creator,omitempty"`
-    Producer   *CreatorInfo `json:"producer,omitempty"`
-    Tags       []Tag        `json:"tags"`
-    CreatedAt  string       `json:"createdAt"`
+    ID           int64              `json:"id"`
+    Name         string             `json:"name"`
+    FileType     int                `json:"fileType"`    // 1=视频, 2=图片
+    Format       string             `json:"format"`
+    Duration     string             `json:"duration"`
+    Resolution   string             `json:"resolution"`
+    Cover        string             `json:"cover"`
+    PlayUrl      string             `json:"playUrl"`
+    Ratio        float64            `json:"ratio"`
+    FileSize     int64              `json:"fileSize"`
+    Rating       int                `json:"rating"`
+    Status       int                `json:"status"`
+    ScriptId     int64              `json:"scriptId"`
+    Creator      *CreatorInfo       `json:"creator,omitempty"`
+    Producer     *CreatorInfo       `json:"producer,omitempty"`
+    Tags         []Tag              `json:"tags"`
+    CreatedAt    string             `json:"createdAt"`
+    CustomFields map[string]string  `json:"customFields"` // 自定义字段值，key=fieldName，value=JSON字符串
 }
 
 // MaterialListRequest 素材列表请求
@@ -164,10 +166,11 @@ type MaterialListRequest struct {
 
 // MaterialListResult 素材列表结果
 type MaterialListResult struct {
-    Materials []Material `json:"materials"`
-    Total     int64      `json:"total"`
-    Page      int        `json:"page"`
-    PageSize  int        `json:"pageSize"`
+    Materials []Material  `json:"materials"`
+    Total     int64       `json:"total"`
+    Page      int         `json:"page"`
+    PageSize  int         `json:"pageSize"`
+    Fields    []FieldDef  `json:"fields"`  // 字段定义列表
 }
 ```
 
