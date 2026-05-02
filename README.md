@@ -445,6 +445,70 @@ cbi repository file-detail 123 -q
     标签: 年轻男性, 运动风格
 ```
 
+#### AI 视频分析结果（analysis）
+
+`analysis` 字段是 AI 视频理解的完整分析结果（JSON 字符串），通过 `--format json` 可查看完整结构：
+
+```json
+{
+  "overall_analysis": "整体分析文本",
+  "tags": {
+    "industry": ["电商"],
+    "style": ["真人实拍"],
+    "emotion": ["温馨"]
+  },
+  "shots": [
+    {
+      "start": "00:00:00",
+      "end": "00:00:03",
+      "tags": {...}
+    }
+  ],
+  "signals": [
+    {
+      "signalName": "脚本结构",
+      "signalType": 2,
+      "signalContent": "{...}"
+    }
+  ],
+  "creative_strategy": {
+    "storyboard_reproduction": [
+      {
+        "segment_start_time": "00:00:00",
+        "segment_end_time": "00:00:03",
+        "visual_description": "...",
+        "audio_info": "...",
+        "action_description": "...",
+        "creation_prompt": "...",
+        "video_id": 0,
+        "cover_url": "https://..."
+      }
+    ]
+  },
+  "script_type": "短视频"
+}
+```
+
+**字段说明：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `overall_analysis` | string | 整体视频分析描述 |
+| `tags` | object | 视频标签（行业、风格、情感等） |
+| `shots` | array | 镜头分段信息（时间区间 + 标签） |
+| `signals` | array | 信号列表，比外层 signals 字段更完整，含 signalType、结构化 signalContent |
+| `signals[].signalType` | int32 | 信号类型编号（1=品牌产品/画面/声音，2=脚本结构，3=前三秒分析等） |
+| `signals[].signalContent` | string/json | 信号内容，V2 格式为 JSON 结构体 |
+| `creative_strategy` | object | 创意策略，含分镜复现（storyboard_reproduction） |
+| `creative_strategy.storyboard_reproduction` | array | 分镜复现列表，每个包含时间区间、画面描述、音频、动作、创作提示词、封面 |
+| `script_type` | string | 脚本类型 |
+
+**注意事项：**
+- `analysis` 字段来源：`ai_content_analysis` 表，通过 `repository_file.hash` → `ai_content_analysis.file_hash` 关联
+- 当文件没有 AI 分析结果时，`analysis` 返回空字符串
+- `analysis` 与外层 `signals` 的区别：`signals` 是从 `repository_file_analysis.signals` 解析的扁平化信号摘要，`analysis` 是完整的原始 AI 分析结果，包含 signals 的更丰富版本、creative_strategy、shots 等完整数据
+- V1/V2 格式兼容：V1 的 `signalContent` 为 string，V2 为 JSON 结构体。V2 判定依据是 `creative_strategy` 非空或 `signalContent` 以 `{` 或 `[` 开头
+
 ### 文件查重
 
 ```bash
