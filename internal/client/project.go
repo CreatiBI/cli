@@ -295,3 +295,135 @@ func (c *ProjectClient) CreateProject(ctx context.Context, req *ProjectCreateReq
 		Name:      result.Get("data.name").String(),
 	}, nil
 }
+
+// ListScripts 获取专案脚本列表
+func (c *ProjectClient) ListScripts(ctx context.Context, req *ScriptListRequest) (*ScriptListResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+		"page":      req.Page,
+		"pageSize":  req.PageSize,
+	}
+	if req.Keyword != "" {
+		body["keyword"] = req.Keyword
+	}
+	if req.State > 0 {
+		body["state"] = req.State
+	}
+	if req.ParentId > 0 {
+		body["parentId"] = req.ParentId
+	}
+	if req.IsArchived > 0 {
+		body["isArchived"] = req.IsArchived
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/script/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("SCRIPT_LIST_ERROR",
+			fmt.Sprintf("获取脚本列表失败 (%d)", codeVal), message)
+	}
+
+	scripts := []Script{}
+	result.Get("data.scripts").ForEach(func(_, value gjson.Result) bool {
+		script := Script{
+			ID:               value.Get("id").Int(),
+			Name:             value.Get("name").String(),
+			State:            int(value.Get("state").Int()),
+			DueDate:          value.Get("dueDate").String(),
+			CreatedAt:        value.Get("createdAt").String(),
+			ParentId:         value.Get("parentId").Int(),
+			CurrentVersionNo: int(value.Get("currentVersionNo").Int()),
+			TableIdValue:     value.Get("tableIdValue").Int(),
+			AiGenerate:       int(value.Get("aiGenerate").Int()),
+		}
+
+		// 解析 creator
+		if creator := value.Get("creator"); creator.Exists() {
+			script.Creator = parseCreatorInfo(creator)
+		}
+		// 解析 assignedWriter
+		if writer := value.Get("assignedWriter"); writer.Exists() {
+			script.AssignedWriter = parseCreatorInfo(writer)
+		}
+		// 解析 assignedDesigner
+		if designer := value.Get("assignedDesigner"); designer.Exists() {
+			script.AssignedDesigner = parseCreatorInfo(designer)
+		}
+		// 解析 customFields
+		if customFields := value.Get("customFields"); customFields.Exists() {
+			script.CustomFields = parseCustomFields(customFields)
+		}
+
+		scripts = append(scripts, script)
+		return true
+	})
+
+	// 解析 fields
+	fields := []FieldDef{}
+	result.Get("data.fields").ForEach(func(_, value gjson.Result) bool {
+		fields = append(fields, FieldDef{
+			FieldName:     value.Get("fieldName").String(),
+			ViewName:      value.Get("viewName").String(),
+			FieldType:     int(value.Get("fieldType").Int()),
+			Classify:      int(value.Get("classify").Int()),
+			IsShow:        int(value.Get("isShow").Int()),
+			FieldSettings: value.Get("fieldSettings").String(),
+			IsLazy:        int(value.Get("isLazy").Int()),
+		})
+		return true
+	})
+
+	return &ScriptListResult{
+		Scripts:  scripts,
+		Total:    result.Get("data.total").Int(),
+		Page:     int(result.Get("data.page").Int()),
+		PageSize: int(result.Get("data.pageSize").Int()),
+		Fields:   fields,
+	}, nil
+}
+
+// parseCreatorInfo 解析 CreatorInfo
+func parseCreatorInfo(value gjson.Result) *CreatorInfo {
+	return &CreatorInfo{
+		ID:     value.Get("id").Int(),
+		Name:   value.Get("name").String(),
+		Email:  value.Get("email").String(),
+		Avatar: value.Get("avatar").String(),
+	}
+}
+
+// parseCustomFields 解析 customFields (map[string]string)
+func parseCustomFields(value gjson.Result) map[string]string {
+	result := make(map[string]string)
+	value.ForEach(func(key, val gjson.Result) bool {
+		result[key.String()] = val.String()
+		return true
+	})
+	return result
+}
