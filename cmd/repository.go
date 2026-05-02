@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -599,6 +600,11 @@ var repositoryFileDetailCmd = &cobra.Command{
 
 		if quiet || format == "json" {
 			return outputData(cmd, detail)
+		}
+
+		if format == "markdown" {
+			printFileDetailMarkdown(cmd, detail)
+			return nil
 		}
 
 		printFileDetail(cmd, detail)
@@ -1420,6 +1426,78 @@ func printTagListTable(cmd *cobra.Command, tags []client.Tag) {
 	t.Render()
 }
 
+// printAnalysis 打印 AI 视频分析结果
+func printAnalysis(out io.Writer, analysis string) {
+	if analysis == "" {
+		return
+	}
+
+	// 解析 JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(analysis), &data); err != nil {
+		// 解析失败，显示原始内容
+		fmt.Fprintln(out, "AI 视频分析:")
+		fmt.Fprintf(out, "  %s\n", analysis)
+		return
+	}
+
+	fmt.Fprintln(out, "AI 视频分析:")
+
+	// 整体分析
+	if overall, ok := data["overall_analysis"].(string); ok && overall != "" {
+		fmt.Fprintf(out, "  整体分析: %s\n", overall)
+	}
+
+	// 脚本类型
+	if scriptType, ok := data["script_type"].(string); ok && scriptType != "" {
+		fmt.Fprintf(out, "  脚本类型: %s\n", scriptType)
+	}
+
+	// 标签
+	if tags, ok := data["tags"].(map[string]interface{}); ok && len(tags) > 0 {
+		fmt.Fprintln(out, "  标签分类:")
+		for category, values := range tags {
+			if arr, ok := values.([]interface{}); ok && len(arr) > 0 {
+				var tagStrs []string
+				for _, v := range arr {
+					if s, ok := v.(string); ok {
+						tagStrs = append(tagStrs, s)
+					}
+				}
+				if len(tagStrs) > 0 {
+					fmt.Fprintf(out, "    - %s: %s\n", category, strings.Join(tagStrs, ", "))
+				}
+			}
+		}
+	}
+
+	// 镜头分段
+	if shots, ok := data["shots"].([]interface{}); ok && len(shots) > 0 {
+		fmt.Fprintf(out, "  镜头分段: 共 %d 个\n", len(shots))
+	}
+
+	// 信号列表
+	if signals, ok := data["signals"].([]interface{}); ok && len(signals) > 0 {
+		fmt.Fprintf(out, "  分析信号: 共 %d 个\n", len(signals))
+		for i, sig := range signals {
+			if sigMap, ok := sig.(map[string]interface{}); ok {
+				name, _ := sigMap["signalName"].(string)
+				sigType, _ := sigMap["signalType"].(float64)
+				if name != "" {
+					fmt.Fprintf(out, "    %d. [%d] %s\n", i+1, int(sigType), name)
+				}
+			}
+		}
+	}
+
+	// 创意策略
+	if creative, ok := data["creative_strategy"].(map[string]interface{}); ok {
+		if storyboard, ok := creative["storyboard_reproduction"].([]interface{}); ok && len(storyboard) > 0 {
+			fmt.Fprintf(out, "  分镜复现: 共 %d 个分段\n", len(storyboard))
+		}
+	}
+}
+
 // printFileDetail 打印文件详情
 func printFileDetail(cmd *cobra.Command, detail *client.FileDetail) {
 	out := cmd.OutOrStdout()
@@ -1529,9 +1607,185 @@ func printFileDetail(cmd *cobra.Command, detail *client.FileDetail) {
 
 	if detail.Analysis != "" {
 		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "AI 视频分析:")
-		fmt.Fprintf(out, "  (JSON 内容，可使用 --format json 查看完整结构)\n")
+		printAnalysis(out, detail.Analysis)
 	}
+}
+
+// printFileDetailMarkdown 以 Markdown 格式打印文件详情（适合 AI 输入）
+func printFileDetailMarkdown(cmd *cobra.Command, detail *client.FileDetail) {
+	out := cmd.OutOrStdout()
+
+	fmt.Fprintf(out, "## 文件详情\n\n")
+	fmt.Fprintf(out, "- **ID**: %d\n", detail.ID)
+	fmt.Fprintf(out, "- **名称**: %s\n", detail.Name)
+	fmt.Fprintf(out, "- **档案库 ID**: %d\n", detail.RepositoryID)
+	fmt.Fprintf(out, "- **格式**: %s\n", detail.Format)
+	fmt.Fprintf(out, "- **大小**: %s (%d bytes)\n", detail.Size, detail.SizeInByte)
+
+	if detail.Duration != "" {
+		fmt.Fprintf(out, "- **时长**: %s\n", detail.Duration)
+	}
+	if detail.Resolution != "" {
+		fmt.Fprintf(out, "- **分辨率**: %s\n", detail.Resolution)
+	}
+	if detail.Ratio != "" {
+		fmt.Fprintf(out, "- **比例**: %s\n", detail.Ratio)
+	}
+	if detail.FrameRate != "" {
+		fmt.Fprintf(out, "- **帧率**: %s\n", detail.FrameRate)
+	}
+	if detail.Score > 0 {
+		fmt.Fprintf(out, "- **评分**: %d\n", detail.Score)
+	}
+	if detail.Notes != "" {
+		fmt.Fprintf(out, "- **备注**: %s\n", detail.Notes)
+	}
+	if detail.SourcePlatform != "" {
+		fmt.Fprintf(out, "- **来源平台**: %s\n", detail.SourcePlatform)
+	}
+	if detail.FileSourceUrl != "" {
+		fmt.Fprintf(out, "- **来源 URL**: %s\n", detail.FileSourceUrl)
+	}
+	if detail.Hash != "" {
+		fmt.Fprintf(out, "- **MD5**: %s\n", detail.Hash)
+	}
+
+	if detail.CreatedAt > 0 {
+		fmt.Fprintf(out, "- **创建时间**: %s\n", time.Unix(detail.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+	}
+	if detail.UpdatedAt > 0 {
+		fmt.Fprintf(out, "- **更新时间**: %s\n", time.Unix(detail.UpdatedAt, 0).Format("2006-01-02 15:04:05"))
+	}
+
+	if detail.Cover != "" {
+		fmt.Fprintf(out, "- **封面 URL**: %s\n", detail.Cover)
+	}
+	if detail.FileOriginUrl != "" {
+		fmt.Fprintf(out, "- **原始文件 URL**: %s\n", detail.FileOriginUrl)
+	}
+	if detail.FileViewUrl != "" {
+		fmt.Fprintf(out, "- **预览 URL**: %s\n", detail.FileViewUrl)
+	}
+
+	if len(detail.Products) > 0 {
+		fmt.Fprintf(out, "\n### 关联产品\n\n")
+		for _, p := range detail.Products {
+			fmt.Fprintf(out, "- **%s** (ID: %d)\n", p.Name, p.ID)
+		}
+	}
+
+	if len(detail.Tags) > 0 {
+		fmt.Fprintf(out, "\n### 标签\n\n")
+		for _, t := range detail.Tags {
+			fmt.Fprintf(out, "- **%s** (ID: %d)\n", t.Name, t.ID)
+		}
+	}
+
+	if len(detail.Folders) > 0 {
+		fmt.Fprintf(out, "\n### 所在文件夹\n\n")
+		for _, f := range detail.Folders {
+			fmt.Fprintf(out, "- **%s** (ID: %d)\n", f.Name, f.ID)
+		}
+	}
+
+	if detail.Creator != nil {
+		fmt.Fprintf(out, "\n### 创建者\n\n")
+		fmt.Fprintf(out, "- **姓名**: %s\n", detail.Creator.Name)
+		fmt.Fprintf(out, "- **邮箱**: %s\n", detail.Creator.Email)
+		fmt.Fprintf(out, "- **ID**: %d\n", detail.Creator.ID)
+	}
+
+	if len(detail.Signals) > 0 {
+		fmt.Fprintf(out, "\n### 视频理解信号\n\n")
+		for _, s := range detail.Signals {
+			fmt.Fprintf(out, "#### [%s] %s\n\n", s.SignalID, s.SignalName)
+			if len(s.SignalTags) > 0 {
+				fmt.Fprintf(out, "**标签**: %s\n\n", strings.Join(s.SignalTags, ", "))
+			}
+			if s.SignalContent != "" {
+				fmt.Fprintf(out, "**内容**:\n\n```\n%s\n```\n\n", s.SignalContent)
+			}
+		}
+	}
+
+	if detail.Analysis != "" {
+		fmt.Fprintf(out, "\n### AI 视频分析\n\n")
+		printAnalysisMarkdown(out, detail.Analysis)
+	}
+}
+
+// printAnalysisMarkdown 以 Markdown 格式打印 AI 视频分析结果
+func printAnalysisMarkdown(out io.Writer, analysis string) {
+	if analysis == "" {
+		return
+	}
+
+	// 解析 JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(analysis), &data); err != nil {
+		// 解析失败，显示原始内容
+		fmt.Fprintf(out, "```json\n%s\n```\n", analysis)
+		return
+	}
+
+	// 整体分析
+	if overall, ok := data["overall_analysis"].(string); ok && overall != "" {
+		fmt.Fprintf(out, "**整体分析**: %s\n\n", overall)
+	}
+
+	// 脚本类型
+	if scriptType, ok := data["script_type"].(string); ok && scriptType != "" {
+		fmt.Fprintf(out, "**脚本类型**: %s\n\n", scriptType)
+	}
+
+	// 标签
+	if tags, ok := data["tags"].(map[string]interface{}); ok && len(tags) > 0 {
+		fmt.Fprintf(out, "**标签分类**:\n\n")
+		for category, values := range tags {
+			if arr, ok := values.([]interface{}); ok && len(arr) > 0 {
+				var tagStrs []string
+				for _, v := range arr {
+					if s, ok := v.(string); ok {
+						tagStrs = append(tagStrs, s)
+					}
+				}
+				if len(tagStrs) > 0 {
+					fmt.Fprintf(out, "- **%s**: %s\n", category, strings.Join(tagStrs, ", "))
+				}
+			}
+		}
+		fmt.Fprintf(out, "\n")
+	}
+
+	// 镜头分段
+	if shots, ok := data["shots"].([]interface{}); ok && len(shots) > 0 {
+		fmt.Fprintf(out, "**镜头分段**: 共 %d 个\n\n", len(shots))
+	}
+
+	// 信号列表
+	if signals, ok := data["signals"].([]interface{}); ok && len(signals) > 0 {
+		fmt.Fprintf(out, "**分析信号**: 共 %d 个\n\n", len(signals))
+		for i, sig := range signals {
+			if sigMap, ok := sig.(map[string]interface{}); ok {
+				name, _ := sigMap["signalName"].(string)
+				sigType, _ := sigMap["signalType"].(float64)
+				if name != "" {
+					fmt.Fprintf(out, "%d. **[%d] %s**\n", i+1, int(sigType), name)
+				}
+			}
+		}
+		fmt.Fprintf(out, "\n")
+	}
+
+	// 创意策略
+	if creative, ok := data["creative_strategy"].(map[string]interface{}); ok {
+		if storyboard, ok := creative["storyboard_reproduction"].([]interface{}); ok && len(storyboard) > 0 {
+			fmt.Fprintf(out, "**分镜复现**: 共 %d 个分段\n\n", len(storyboard))
+		}
+	}
+
+	// 完整 JSON（折叠显示）
+	fmt.Fprintf(out, "<details>\n<summary>完整 JSON 结构</summary>\n\n```json\n%s\n```\n\n</details>\n", analysis)
 }
 
 // printFileListTable 打印文件列表表格

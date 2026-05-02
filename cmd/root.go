@@ -59,7 +59,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "配置文件路径 (默认 ~/.cbi/config.json)")
 
 	// 输出相关标志
-	rootCmd.PersistentFlags().StringVarP(&format, "format", "f", "table", "输出格式: json|table")
+	rootCmd.PersistentFlags().StringVarP(&format, "format", "f", "table", "输出格式: json|table|markdown")
 	rootCmd.PersistentFlags().StringVarP(&outputFile, "output", "o", "", "输出到文件")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "只输出数据，无日志")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "显示详细信息")
