@@ -1,0 +1,236 @@
+package client
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/go-resty/resty/v2"
+	"github.com/tidwall/gjson"
+
+	"github.com/CreatiBI/cli/internal/config"
+	cliErr "github.com/CreatiBI/cli/internal/errors"
+)
+
+// ProjectClient 专案 API 客户端
+type ProjectClient struct {
+	client *resty.Client
+}
+
+// NewProjectClient 创建专案客户端
+func NewProjectClient() *ProjectClient {
+	baseURL := config.GetBaseURL()
+	return &ProjectClient{
+		client: resty.New().
+			SetBaseURL(baseURL).
+			SetTimeout(30 * 1000000000), // 30 秒
+	}
+}
+
+// Project 专案
+type Project struct {
+	ID        int64        `json:"id"`
+	Name      string       `json:"name"`
+	Creator   *CreatorInfo `json:"creator,omitempty"`
+	CreatedAt string       `json:"createdAt"`
+}
+
+// ProjectListRequest 专案列表请求
+type ProjectListRequest struct {
+	Page         int
+	PageSize     int
+	Keyword      string
+	TeamIds      []int64
+	PortfolioIds []int64
+	Scope        int // 0=所有可见, 1=我加入的
+}
+
+// ProjectListResult 专案列表结果
+type ProjectListResult struct {
+	Projects  []Project `json:"projects"`
+	Total     int64     `json:"total"`
+	Page      int       `json:"page"`
+	PageSize  int       `json:"pageSize"`
+}
+
+// ProjectCreateRequest 创建专案请求
+type ProjectCreateRequest struct {
+	TeamId        int64
+	Name          string
+	Privacy       int    // 1=公开(默认), 2=私有
+	Description   string
+	TemplateId    int64
+	DeadlineStart string // YYYY-MM-DD
+	DeadlineEnd   string // YYYY-MM-DD
+}
+
+// ProjectCreateResult 创建专案结果
+type ProjectCreateResult struct {
+	ProjectId int64  `json:"projectId"`
+	Name      string `json:"name"`
+}
+
+// Script 脚本
+type Script struct {
+	ID               int64             `json:"id"`
+	Name             string            `json:"name"`
+	State            int               `json:"state"`
+	Creator          *CreatorInfo      `json:"creator,omitempty"`
+	AssignedWriter   *CreatorInfo      `json:"assignedWriter,omitempty"`
+	AssignedDesigner *CreatorInfo      `json:"assignedDesigner,omitempty"`
+	DueDate          string            `json:"dueDate"`
+	CreatedAt        string            `json:"createdAt"`
+	ParentId         int64             `json:"parentId"`
+	CurrentVersionNo int               `json:"currentVersionNo"`
+	TableIdValue     int64             `json:"tableIdValue"`
+	AiGenerate       int               `json:"aiGenerate"`
+	CustomFields     map[string]string `json:"customFields"` // 自定义字段值，key=fieldName，value=JSON字符串
+}
+
+// ScriptListRequest 脚本列表请求
+type ScriptListRequest struct {
+	ProjectId  int64
+	Page       int
+	PageSize   int
+	Keyword    string
+	State      int   // 任务状态筛选
+	ParentId   int64 // 父任务筛选，0=不过滤
+	IsArchived int   // 0=不过滤, 1=档案, 2=非档案
+}
+
+// ScriptListResult 脚本列表结果
+type ScriptListResult struct {
+	Scripts  []Script   `json:"scripts"`
+	Total    int64      `json:"total"`
+	Page     int        `json:"page"`
+	PageSize int        `json:"pageSize"`
+	Fields   []FieldDef `json:"fields"` // 字段定义列表
+}
+
+// FieldDef 字段定义（脚本和素材共用）
+type FieldDef struct {
+	FieldName     string `json:"fieldName"`     // 字段名称
+	ViewName      string `json:"viewName"`      // 显示名称
+	FieldType     int    `json:"fieldType"`     // 字段类型
+	Classify      int    `json:"classify"`      // 分类：1=固定字段，2=固有字段，3=自定义字段
+	IsShow        int    `json:"isShow"`        // 是否显示
+	FieldSettings string `json:"fieldSettings"` // 字段配置（JSON字符串）
+	IsLazy        int    `json:"isLazy"`        // 是否懒加载
+}
+
+// Material 素材
+type Material struct {
+	ID           int64             `json:"id"`
+	Name         string            `json:"name"`
+	FileType     int               `json:"fileType"`    // 1=视频, 2=图片
+	Format       string            `json:"format"`
+	Duration     string            `json:"duration"`
+	Resolution   string            `json:"resolution"`
+	Cover        string            `json:"cover"`
+	PlayUrl      string            `json:"playUrl"`
+	Ratio        float64           `json:"ratio"`
+	FileSize     int64             `json:"fileSize"`
+	Rating       int               `json:"rating"`
+	Status       int               `json:"status"`
+	ScriptId     int64             `json:"scriptId"`
+	Creator      *CreatorInfo      `json:"creator,omitempty"`
+	Producer     *CreatorInfo      `json:"producer,omitempty"`
+	Tags         []Tag             `json:"tags"`
+	CreatedAt    string            `json:"createdAt"`
+	CustomFields map[string]string `json:"customFields"` // 自定义字段值，key=fieldName，value=JSON字符串
+}
+
+// MaterialListRequest 素材列表请求
+type MaterialListRequest struct {
+	ProjectId int64
+	Page      int
+	PageSize  int
+	Keyword   string
+}
+
+// MaterialListResult 素材列表结果
+type MaterialListResult struct {
+	Materials []Material  `json:"materials"`
+	Total     int64       `json:"total"`
+	Page      int         `json:"page"`
+	PageSize  int         `json:"pageSize"`
+	Fields    []FieldDef  `json:"fields"` // 字段定义列表
+}
+
+// ListProjects 获取专案列表
+func (c *ProjectClient) ListProjects(ctx context.Context, req *ProjectListRequest) (*ProjectListResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"page":     req.Page,
+		"pageSize": req.PageSize,
+	}
+	if req.Keyword != "" {
+		body["keyword"] = req.Keyword
+	}
+	if len(req.TeamIds) > 0 {
+		body["teamIds"] = req.TeamIds
+	}
+	if len(req.PortfolioIds) > 0 {
+		body["portfolioIds"] = req.PortfolioIds
+	}
+	if req.Scope > 0 {
+		body["scope"] = req.Scope
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误（可能 token 过期）
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PROJECT_LIST_ERROR",
+			fmt.Sprintf("获取专案列表失败 (%d)", codeVal), message)
+	}
+
+	projects := []Project{}
+	result.Get("data.projects").ForEach(func(_, value gjson.Result) bool {
+		project := Project{
+			ID:        value.Get("id").Int(),
+			Name:      value.Get("name").String(),
+			CreatedAt: value.Get("createdAt").String(),
+		}
+		if creator := value.Get("creator"); creator.Exists() {
+			project.Creator = &CreatorInfo{
+				ID:     creator.Get("id").Int(),
+				Name:   creator.Get("name").String(),
+				Email:  creator.Get("email").String(),
+				Avatar: creator.Get("avatar").String(),
+			}
+		}
+		projects = append(projects, project)
+		return true
+	})
+
+	return &ProjectListResult{
+		Projects:  projects,
+		Total:     result.Get("data.total").Int(),
+		Page:      int(result.Get("data.page").Int()),
+		PageSize:  int(result.Get("data.pageSize").Int()),
+	}, nil
+}
