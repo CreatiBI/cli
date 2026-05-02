@@ -151,6 +151,61 @@ var projectCreateCmd = &cobra.Command{
 	},
 }
 
+// projectScriptListCmd 脚本列表
+var projectScriptListCmd = &cobra.Command{
+	Use:   "script-list",
+	Short: "列出专案脚本",
+	Long: `获取专案的脚本列表。
+
+示例：
+  cbi project script-list --project-id 1
+  cbi project script-list --project-id 1 --keyword "广告" --state 1
+  cbi project script-list --project-id 1 --page 2 --pageSize 30`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		keyword, _ := cmd.Flags().GetString("keyword")
+		state, _ := cmd.Flags().GetInt("state")
+		parentId, _ := cmd.Flags().GetInt64("parent-id")
+		isArchived, _ := cmd.Flags().GetInt("is-archived")
+		page, _ := cmd.Flags().GetInt("page")
+		pageSize, _ := cmd.Flags().GetInt("pageSize")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.ListScripts(ctx, &client.ScriptListRequest{
+			ProjectId:  projectId,
+			Page:       page,
+			PageSize:   pageSize,
+			Keyword:    keyword,
+			State:      state,
+			ParentId:   parentId,
+			IsArchived: isArchived,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printScriptListTable(cmd, result)
+			return nil
+		}
+	},
+}
+
 // printProjectListTable 表格输出专案列表
 func printProjectListTable(cmd *cobra.Command, result *client.ProjectListResult) {
 	w := cmd.OutOrStdout()
@@ -205,10 +260,64 @@ func formatDate(s string) string {
 	return s
 }
 
+// printScriptListTable 表格输出脚本列表
+func printScriptListTable(cmd *cobra.Command, result *client.ScriptListResult) {
+	w := cmd.OutOrStdout()
+
+	fmt.Fprintf(w, "共 %d 条，第 %d/%d 页\n\n",
+		result.Total, result.Page, totalPages(result.Total, result.PageSize))
+
+	if len(result.Scripts) == 0 {
+		fmt.Fprintln(w, "无脚本")
+		return
+	}
+
+	t := output.NewTableWriter(w)
+	t.AppendHeader("ID", "名称", "状态", "编剧", "设计师", "截止日期")
+
+	for _, s := range result.Scripts {
+		writer := "-"
+		if s.AssignedWriter != nil {
+			writer = s.AssignedWriter.Name
+		}
+		designer := "-"
+		if s.AssignedDesigner != nil {
+			designer = s.AssignedDesigner.Name
+		}
+		t.AppendRow(
+			strconv.FormatInt(s.ID, 10),
+			s.Name,
+			scriptStateName(s.State),
+			writer,
+			designer,
+			formatDate(s.DueDate),
+		)
+	}
+
+	t.Render()
+}
+
+// scriptStateName 获取脚本状态名称
+func scriptStateName(state int) string {
+	switch state {
+	case 1:
+		return "待处理"
+	case 2:
+		return "进行中"
+	case 3:
+		return "已完成"
+	case 4:
+		return "已归档"
+	default:
+		return fmt.Sprintf("未知(%d)", state)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
 	projectCmd.AddCommand(projectCreateCmd)
+	projectCmd.AddCommand(projectScriptListCmd)
 
 	// projectListCmd 参数
 	projectListCmd.Flags().String("keyword", "", "搜索关键词")
@@ -228,4 +337,14 @@ func init() {
 	projectCreateCmd.Flags().String("deadline-end", "", "截止日期结束（YYYY-MM-DD）")
 	projectCreateCmd.MarkFlagRequired("team-id")
 	projectCreateCmd.MarkFlagRequired("name")
+
+	// projectScriptListCmd 参数
+	projectScriptListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectScriptListCmd.Flags().String("keyword", "", "搜索关键词")
+	projectScriptListCmd.Flags().Int("state", 0, "任务状态筛选")
+	projectScriptListCmd.Flags().Int64("parent-id", 0, "父任务筛选")
+	projectScriptListCmd.Flags().Int("is-archived", 0, "档案筛选（0=不过滤, 1=档案, 2=非档案）")
+	projectScriptListCmd.Flags().Int("page", 1, "页码")
+	projectScriptListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
+	projectScriptListCmd.MarkFlagRequired("project-id")
 }
