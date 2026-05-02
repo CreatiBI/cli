@@ -427,3 +427,125 @@ func parseCustomFields(value gjson.Result) map[string]string {
 	})
 	return result
 }
+
+// ListMaterials 获取专案素材列表
+func (c *ProjectClient) ListMaterials(ctx context.Context, req *MaterialListRequest) (*MaterialListResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+		"page":      req.Page,
+		"pageSize":  req.PageSize,
+	}
+	if req.Keyword != "" {
+		body["keyword"] = req.Keyword
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("MATERIAL_LIST_ERROR",
+			fmt.Sprintf("获取素材列表失败 (%d)", codeVal), message)
+	}
+
+	materials := []Material{}
+	result.Get("data.materials").ForEach(func(_, value gjson.Result) bool {
+		material := Material{
+			ID:         value.Get("id").Int(),
+			Name:       value.Get("name").String(),
+			FileType:   int(value.Get("fileType").Int()),
+			Format:     value.Get("format").String(),
+			Duration:   value.Get("duration").String(),
+			Resolution: value.Get("resolution").String(),
+			Cover:      value.Get("cover").String(),
+			PlayUrl:    value.Get("playUrl").String(),
+			Ratio:      value.Get("ratio").Float(),
+			FileSize:   value.Get("fileSize").Int(),
+			Rating:     int(value.Get("rating").Int()),
+			Status:     int(value.Get("status").Int()),
+			ScriptId:   value.Get("scriptId").Int(),
+			CreatedAt:  value.Get("createdAt").String(),
+		}
+
+		// 解析 creator
+		if creator := value.Get("creator"); creator.Exists() {
+			material.Creator = parseCreatorInfo(creator)
+		}
+		// 解析 producer
+		if producer := value.Get("producer"); producer.Exists() {
+			material.Producer = parseCreatorInfo(producer)
+		}
+		// 解析 tags
+		if tags := value.Get("tags"); tags.Exists() {
+			material.Tags = parseTags(tags)
+		}
+		// 解析 customFields
+		if customFields := value.Get("customFields"); customFields.Exists() {
+			material.CustomFields = parseCustomFields(customFields)
+		}
+
+		materials = append(materials, material)
+		return true
+	})
+
+	// 解析 fields
+	fields := []FieldDef{}
+	result.Get("data.fields").ForEach(func(_, value gjson.Result) bool {
+		fields = append(fields, FieldDef{
+			FieldName:     value.Get("fieldName").String(),
+			ViewName:      value.Get("viewName").String(),
+			FieldType:     int(value.Get("fieldType").Int()),
+			Classify:      int(value.Get("classify").Int()),
+			IsShow:        int(value.Get("isShow").Int()),
+			FieldSettings: value.Get("fieldSettings").String(),
+			IsLazy:        int(value.Get("isLazy").Int()),
+		})
+		return true
+	})
+
+	return &MaterialListResult{
+		Materials: materials,
+		Total:     result.Get("data.total").Int(),
+		Page:      int(result.Get("data.page").Int()),
+		PageSize:  int(result.Get("data.pageSize").Int()),
+		Fields:    fields,
+	}, nil
+}
+
+// parseTags 解析 Tags
+func parseTags(value gjson.Result) []Tag {
+	tags := []Tag{}
+	value.ForEach(func(_, tag gjson.Result) bool {
+		tags = append(tags, Tag{
+			ID:    tag.Get("id").Int(),
+			Name:  tag.Get("name").String(),
+			Color: tag.Get("color").String(),
+		})
+		return true
+	})
+	return tags
+}
