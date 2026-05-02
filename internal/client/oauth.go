@@ -40,7 +40,7 @@ func DefaultOAuthConfig() *OAuthConfig {
 		AuthorizeURL: "https://app.creatibi.cn/oauth/authorize",
 		TokenURL:     baseURL + "/openapi/v1/authen/oauth/token",
 		RedirectURL:  "http://localhost:8080/callback",
-		Scope:        "user:profile repository",
+		Scope:        "user:profile repository project",
 		UserInfoURL:  baseURL + "/openapi/v1/user/info",
 	}
 }
@@ -432,7 +432,7 @@ func (c *OAuthClient) RequestDeviceCode(ctx context.Context) (*DeviceCodeRespons
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
 			"client_id": config.GetClientID(),
-			"scope":     "user:profile repository",
+			"scope":     "user:profile repository project",
 		}).
 		Post(deviceURL)
 
@@ -706,7 +706,7 @@ func (c *OAuthClient) RequestCredentialDeviceCode(ctx context.Context) (*Credent
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
 			"mode":  "credential",
-			"scope": "repository",
+			"scope": "repository project",
 		}).
 		Post(deviceURL)
 

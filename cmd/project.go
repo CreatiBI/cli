@@ -430,8 +430,6 @@ func init() {
 	projectCreateCmd.Flags().Int64("template-id", 0, "模板 ID")
 	projectCreateCmd.Flags().String("deadline-start", "", "截止日期开始（YYYY-MM-DD）")
 	projectCreateCmd.Flags().String("deadline-end", "", "截止日期结束（YYYY-MM-DD）")
-	projectCreateCmd.MarkFlagRequired("team-id")
-	projectCreateCmd.MarkFlagRequired("name")
 
 	// projectScriptListCmd 参数
 	projectScriptListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
@@ -441,12 +439,9 @@ func init() {
 	projectScriptListCmd.Flags().Int("is-archived", 0, "档案筛选（0=不过滤, 1=档案, 2=非档案）")
 	projectScriptListCmd.Flags().Int("page", 1, "页码")
 	projectScriptListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
-	projectScriptListCmd.MarkFlagRequired("project-id")
-
 	// projectMaterialListCmd 参数
 	projectMaterialListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
 	projectMaterialListCmd.Flags().String("keyword", "", "搜索关键词")
 	projectMaterialListCmd.Flags().Int("page", 1, "页码")
 	projectMaterialListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
-	projectMaterialListCmd.MarkFlagRequired("project-id")
 }
