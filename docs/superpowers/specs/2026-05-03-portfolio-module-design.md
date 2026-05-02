@@ -16,7 +16,7 @@ cbi portfolio
 
 ### 1. 获取专案集列表
 - **端点**: POST `/openapi/v1/portfolio/list`
-- **请求参数**: page, pageSize, keyword
+- **请求参数**: page, pageSize, keyword, scope (0=所有可见, 1=我加入的)
 - **响应**: portfolios[], total, page, pageSize
 
 ### 2. 获取专案集下的专案列表
@@ -50,6 +50,7 @@ type PortfolioListRequest struct {
 	Page     int
 	PageSize int
 	Keyword  string
+	Scope    int // 0=所有可见, 1=我加入的
 }
 
 // PortfolioListResult 专案集列表结果
@@ -117,7 +118,7 @@ func (c *PortfolioClient) ListPortfolioProjects(ctx context.Context, req *Portfo
 
 新增文件，定义 `portfolioCmd` 及其子命令：
 
-- `portfolioListCmd` — 专案集列表，参数：--keyword, --page, --pageSize
+- `portfolioListCmd` — 专案集列表，参数：--keyword, --scope, --page, --pageSize
 - `portfolioProjectListCmd` — 专案集下的专案列表，参数：--portfolio-id(必填), --keyword, --page, --pageSize
 
 ## 输出格式
@@ -135,6 +136,13 @@ func (c *PortfolioClient) ListPortfolioProjects(ctx context.Context, req *Portfo
 ID    名称          颜色      可见性    专案数    创建者    创建时间
 1     品牌A投放     #FF0000   公开      10        张三      2026-5-3
 2     品牌B推广     #00FF00   私有      5         李四      2026-5-3
+```
+
+示例：
+```
+cbi portfolio list
+cbi portfolio list --keyword "品牌"
+cbi portfolio list --scope 1 --page 1 --pageSize 20
 ```
 
 **专案集下的专案列表**:
