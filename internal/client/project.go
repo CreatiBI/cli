@@ -234,3 +234,64 @@ func (c *ProjectClient) ListProjects(ctx context.Context, req *ProjectListReques
 		PageSize:  int(result.Get("data.pageSize").Int()),
 	}, nil
 }
+
+// CreateProject 创建专案
+func (c *ProjectClient) CreateProject(ctx context.Context, req *ProjectCreateRequest) (*ProjectCreateResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"teamId": req.TeamId,
+		"name":   req.Name,
+	}
+	if req.Privacy > 0 {
+		body["privacy"] = req.Privacy
+	}
+	if req.Description != "" {
+		body["description"] = req.Description
+	}
+	if req.TemplateId > 0 {
+		body["templateId"] = req.TemplateId
+	}
+	if req.DeadlineStart != "" {
+		body["deadlineStart"] = req.DeadlineStart
+	}
+	if req.DeadlineEnd != "" {
+		body["deadlineEnd"] = req.DeadlineEnd
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/create")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误（可能 token 过期）
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PROJECT_CREATE_ERROR",
+			fmt.Sprintf("创建专案失败 (%d)", codeVal), message)
+	}
+
+	return &ProjectCreateResult{
+		ProjectId: result.Get("data.projectId").Int(),
+		Name:      result.Get("data.name").String(),
+	}, nil
+}
