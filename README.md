@@ -106,6 +106,11 @@ cbi
     ├── file-product-remove   # 移除关联产品
     ├── highlight-clip-list   # 爆点片段列表
     └── highlight-clip-detail # 爆点片段详情
+├── project                   # 专案管理
+│   ├── list                  # 专案列表
+│   ├── create                # 创建专案
+│   ├── script-list           # 脚本列表
+│   └── material-list         # 素材列表
 ```
 
 ---
@@ -763,6 +768,135 @@ cbi repository file-create \
 2. 计算 MD5 进行查重
 3. **如果文件重复，默认跳过上传**
 4. 如需上传重复文件，询问用户确认后使用 `--force` 参数
+
+---
+
+## 专案模块 (project)
+
+### 列出专案
+
+```bash
+# 列出所有可见专案
+cbi project list
+
+# 搜索关键词
+cbi project list --keyword "品牌"
+
+# 筛选我加入的专案
+cbi project list --scope 1
+
+# 分页查询
+cbi project list --page 2 --pageSize 30
+
+# JSON 格式
+cbi project list --format json
+```
+
+参数：
+- `--keyword`: 搜索关键词
+- `--team-ids`: 团队 ID 列表（逗号分隔）
+- `--portfolio-ids`: 作品集 ID 列表（逗号分隔）
+- `--scope`: 范围筛选（0=所有可见, 1=我加入的）
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+### 创建专案
+
+```bash
+# 创建公开专案
+cbi project create --team-id 1 --name "品牌投放"
+
+# 创建私有专案
+cbi project create --team-id 1 --name "新品推广" --privacy 2
+
+# 完整参数
+cbi project create \
+  --team-id 1 \
+  --name "春节活动" \
+  --privacy 1 \
+  --description "春节期间投放素材" \
+  --deadline-start 2026-01-15 \
+  --deadline-end 2026-02-15
+```
+
+参数：
+- `--team-id`: 团队 ID（必填）
+- `--name`: 专案名称（必填）
+- `--privacy`: 隐私设置（1=公开, 2=私有，默认 1）
+- `--description`: 专案描述
+- `--template-id`: 模板 ID
+- `--deadline-start`: 截止日期开始（YYYY-MM-DD）
+- `--deadline-end`: 截止日期结束（YYYY-MM-DD）
+
+### 列出脚本
+
+```bash
+# 列出专案所有脚本
+cbi project script-list --project-id 1
+
+# 搜索关键词
+cbi project script-list --project-id 1 --keyword "广告"
+
+# 筛选状态
+cbi project script-list --project-id 1 --state 2
+
+# 分页查询
+cbi project script-list --project-id 1 --page 2 --pageSize 30
+
+# JSON 格式
+cbi project script-list --project-id 1 --format json
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--keyword`: 搜索关键词
+- `--state`: 任务状态筛选
+- `--parent-id`: 父任务筛选
+- `--is-archived`: 档案筛选（0=不过滤, 1=档案, 2=非档案）
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+脚本状态：
+- 1 = 待处理
+- 2 = 进行中
+- 3 = 已完成
+- 4 = 已归档
+
+### 列出素材
+
+```bash
+# 列出专案所有素材
+cbi project material-list --project-id 1
+
+# 搜索关键词
+cbi project material-list --project-id 1 --keyword "视频"
+
+# 分页查询
+cbi project material-list --project-id 1 --page 2 --pageSize 30
+
+# JSON 格式
+cbi project material-list --project-id 1 --format json
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--keyword`: 搜索关键词
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+素材类型：
+- 1 = 视频
+- 2 = 图片
+
+**customFields 说明：**
+
+脚本和素材都支持自定义字段（customFields），以 `map<string, string>` 形式返回，key 为字段名称（fieldName），value 为 JSON 字符串。字段定义（fields）随列表返回，包含 classify 字段标识分类：
+
+| Classify | 说明 |
+|----------|------|
+| 1 | 固定字段 |
+| 2 | 固有字段 |
+| 3 | 自定义字段 |
 
 ---
 
