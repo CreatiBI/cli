@@ -168,3 +168,93 @@ func (c *PortfolioClient) ListPortfolios(ctx context.Context, req *PortfolioList
 		PageSize:   int(result.Get("data.pageSize").Int()),
 	}, nil
 }
+
+// ListPortfolioProjects 获取作品集专案列表
+func (c *PortfolioClient) ListPortfolioProjects(ctx context.Context, req *PortfolioProjectListRequest) (*PortfolioProjectListResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"portfolioId": req.PortfolioId,
+		"page":        req.Page,
+		"pageSize":    req.PageSize,
+	}
+	if req.Keyword != "" {
+		body["keyword"] = req.Keyword
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/portfolio/project/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误（可能 token 过期）
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PORTFOLIO_PROJECT_LIST_ERROR",
+			fmt.Sprintf("获取作品集专案列表失败 (%d)", codeVal), message)
+	}
+
+	projects := []PortfolioProject{}
+	result.Get("data.projects").ForEach(func(_, value gjson.Result) bool {
+		project := PortfolioProject{
+			ID:            value.Get("id").Int(),
+			Name:          value.Get("name").String(),
+			DeadlineStart: value.Get("deadlineStart").String(),
+			DeadlineEnd:   value.Get("deadlineEnd").String(),
+			Status:        int(value.Get("status").Int()),
+		}
+		// 解析 team
+		if team := value.Get("team"); team.Exists() {
+			project.Team = parseTeamInfo(team)
+		}
+		// 解析 owner
+		if owner := value.Get("owner"); owner.Exists() {
+			project.Owner = parseOwnerInfo(owner)
+		}
+		projects = append(projects, project)
+		return true
+	})
+
+	return &PortfolioProjectListResult{
+		Projects: projects,
+		Total:    result.Get("data.total").Int(),
+		Page:     int(result.Get("data.page").Int()),
+		PageSize: int(result.Get("data.pageSize").Int()),
+	}, nil
+}
+
+// parseTeamInfo 解析 TeamInfo
+func parseTeamInfo(value gjson.Result) *TeamInfo {
+	return &TeamInfo{
+		ID:   value.Get("id").Int(),
+		Name: value.Get("name").String(),
+	}
+}
+
+// parseOwnerInfo 解析 OwnerInfo
+func parseOwnerInfo(value gjson.Result) *OwnerInfo {
+	return &OwnerInfo{
+		ID:     value.Get("id").Int(),
+		Name:   value.Get("name").String(),
+		Avatar: value.Get("avatar").String(),
+	}
+}
