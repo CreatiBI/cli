@@ -19,20 +19,20 @@ var (
 
 // AppConfig 应用配置结构
 type AppConfig struct {
-	BaseURL          string    `json:"base_url"`
-	ClientID         string    `json:"client_id"`
-	ClientSecret     string    `json:"client_secret"`
-	DefaultWorkspace string    `json:"default_workspace,omitempty"`
+	BaseURL          string `json:"base_url"`
+	ClientID         string `json:"client_id"`
+	ClientSecret     string `json:"client_secret"`
+	DefaultWorkspace string `json:"default_workspace,omitempty"`
 
 	// 登录后的凭证
-	APIKey           string    `json:"api_key,omitempty"`
-	RefreshToken     string    `json:"refresh_token,omitempty"`
-	TokenExpiresAt   time.Time `json:"token_expires_at,omitempty"`
+	APIKey                string    `json:"api_key,omitempty"`
+	RefreshToken          string    `json:"refresh_token,omitempty"`
+	TokenExpiresAt        time.Time `json:"token_expires_at,omitempty"`
 	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at,omitempty"`
 
 	// 更新检查缓存
-	UpdateLastCheckedAt  time.Time `json:"update_last_checked_at,omitempty"`
-	UpdateLatestVersion  string    `json:"update_latest_version,omitempty"`
+	UpdateLastCheckedAt time.Time `json:"update_last_checked_at,omitempty"`
+	UpdateLatestVersion string    `json:"update_latest_version,omitempty"`
 }
 
 // Init 初始化配置目录

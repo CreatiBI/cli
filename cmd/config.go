@@ -472,10 +472,10 @@ func maskSecret(secret string) string {
 // outputConfigJSON JSON 格式输出配置（脱敏）
 func outputConfigJSON(cmd *cobra.Command, cfg *config.AppConfig) {
 	output := map[string]interface{}{
-		"config_file":      config.GetConfigFile(),
-		"base_url":         cfg.BaseURL,
-		"client_id":        cfg.ClientID,
-		"client_secret":    maskSecret(cfg.ClientSecret),
+		"config_file":       config.GetConfigFile(),
+		"base_url":          cfg.BaseURL,
+		"client_id":         cfg.ClientID,
+		"client_secret":     maskSecret(cfg.ClientSecret),
 		"default_workspace": cfg.DefaultWorkspace,
 	}
 

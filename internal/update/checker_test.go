@@ -6,10 +6,10 @@ import (
 
 func TestCompareVersions(t *testing.T) {
 	tests := []struct {
-		name     string
-		latest   string
-		current  string
-		want     bool
+		name    string
+		latest  string
+		current string
+		want    bool
 	}{
 		{
 			name:    "latest greater",

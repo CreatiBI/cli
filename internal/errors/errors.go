@@ -7,10 +7,10 @@ import (
 
 // CLIError CLI 错误类型
 type CLIError struct {
-	Code        string
-	Message     string
-	Detail      string
-	Suggestion  string
+	Code       string
+	Message    string
+	Detail     string
+	Suggestion string
 }
 
 func (e *CLIError) Error() string {
@@ -40,28 +40,28 @@ func (e *CLIError) Is(target error) bool {
 // 鉴权错误
 var (
 	ErrAuthRequired = &CLIError{
-		Code:        "AUTH_REQUIRED",
-		Message:     "未登录",
-		Suggestion:  "请先执行: cbi auth login",
+		Code:       "AUTH_REQUIRED",
+		Message:    "未登录",
+		Suggestion: "请先执行: cbi auth login",
 	}
 	ErrTokenExpired = &CLIError{
-		Code:        "TOKEN_EXPIRED",
-		Message:     "认证已过期",
-		Suggestion:  "请重新登录: cbi auth login",
+		Code:       "TOKEN_EXPIRED",
+		Message:    "认证已过期",
+		Suggestion: "请重新登录: cbi auth login",
 	}
 	ErrInvalidAPIKey = &CLIError{
-		Code:        "INVALID_API_KEY",
-		Message:     "无效的 API Key",
-		Suggestion:  "请重新登录: cbi auth login",
+		Code:       "INVALID_API_KEY",
+		Message:    "无效的 API Key",
+		Suggestion: "请重新登录: cbi auth login",
 	}
 )
 
 // 权限错误
 var (
 	ErrPermissionDenied = &CLIError{
-		Code:        "PERMISSION_DENIED",
-		Message:     "无权限执行此操作",
-		Suggestion:  "请确认账户权限或联系管理员",
+		Code:       "PERMISSION_DENIED",
+		Message:    "无权限执行此操作",
+		Suggestion: "请确认账户权限或联系管理员",
 	}
 )
 
@@ -81,16 +81,16 @@ var (
 		Suggestion: "请通过 --repository-id 指定",
 	}
 	ErrMissingCollectionID = &CLIError{
-		Code:       "MISSING_COLLECTION_ID",
-		Message:    "缺少专案集 ID",
+		Code:    "MISSING_COLLECTION_ID",
+		Message: "缺少专案集 ID",
 	}
 	ErrMissingAssetID = &CLIError{
-		Code:       "MISSING_ASSET_ID",
-		Message:    "缺少素材 ID",
+		Code:    "MISSING_ASSET_ID",
+		Message: "缺少素材 ID",
 	}
 	ErrMissingTaskID = &CLIError{
-		Code:       "MISSING_TASK_ID",
-		Message:    "缺少任务 ID",
+		Code:    "MISSING_TASK_ID",
+		Message: "缺少任务 ID",
 	}
 )
 
@@ -117,41 +117,41 @@ var (
 		Message: "任务不存在",
 	}
 	ErrWorkspaceNotFound = &CLIError{
-		Code:       "WORKSPACE_NOT_FOUND",
-		Message:    "workspace 不存在",
+		Code:    "WORKSPACE_NOT_FOUND",
+		Message: "workspace 不存在",
 	}
 )
 
 // 网络/上游错误
 var (
 	ErrUpstreamTimeout = &CLIError{
-		Code:        "UPSTREAM_TIMEOUT",
-		Message:     "服务器响应超时",
-		Suggestion:  "请稍后重试",
+		Code:       "UPSTREAM_TIMEOUT",
+		Message:    "服务器响应超时",
+		Suggestion: "请稍后重试",
 	}
 	ErrUpstreamError = &CLIError{
-		Code:        "UPSTREAM_ERROR",
-		Message:     "服务器内部错误",
-		Suggestion:  "请稍后重试，如持续出现请联系管理员",
+		Code:       "UPSTREAM_ERROR",
+		Message:    "服务器内部错误",
+		Suggestion: "请稍后重试，如持续出现请联系管理员",
 	}
 	ErrNetworkError = &CLIError{
-		Code:        "NETWORK_ERROR",
-		Message:     "网络连接失败",
-		Suggestion:  "请检查网络连接",
+		Code:       "NETWORK_ERROR",
+		Message:    "网络连接失败",
+		Suggestion: "请检查网络连接",
 	}
 	ErrConfigNotFound = &CLIError{
-		Code:        "CONFIG_NOT_FOUND",
-		Message:     "配置文件不存在",
-		Suggestion:  "请先初始化: cbi config init",
+		Code:       "CONFIG_NOT_FOUND",
+		Message:    "配置文件不存在",
+		Suggestion: "请先初始化: cbi config init",
 	}
 	ErrConfigInvalid = &CLIError{
-		Code:        "CONFIG_INVALID",
-		Message:     "配置文件格式错误",
-		Suggestion:  "请重新初始化: cbi config init --new",
+		Code:       "CONFIG_INVALID",
+		Message:    "配置文件格式错误",
+		Suggestion: "请重新初始化: cbi config init --new",
 	}
 	ErrConfigWriteFailed = &CLIError{
-		Code:        "CONFIG_WRITE_FAILED",
-		Message:     "配置文件写入失败",
+		Code:    "CONFIG_WRITE_FAILED",
+		Message: "配置文件写入失败",
 	}
 )
 

@@ -18,10 +18,10 @@ type Writer = io.Writer
 type Format string
 
 const (
-	FormatTable     Format = "table"
-	FormatJSON      Format = "json"
-	FormatNDJSON    Format = "ndjson"
-	FormatMarkdown  Format = "markdown"
+	FormatTable    Format = "table"
+	FormatJSON     Format = "json"
+	FormatNDJSON   Format = "ndjson"
+	FormatMarkdown Format = "markdown"
 )
 
 // Formatter 输出格式化器
@@ -208,9 +208,9 @@ func (f *Formatter) Writer() io.Writer {
 
 // TableWriter 简化的表格写入器
 type TableWriter struct {
-	t     table.Writer
-	w     io.Writer
-	rows  []table.Row
+	t    table.Writer
+	w    io.Writer
+	rows []table.Row
 }
 
 // NewTableWriter 创建表格写入器
