@@ -313,11 +313,106 @@ func scriptStateName(state int) string {
 	}
 }
 
+// projectMaterialListCmd 素材列表
+var projectMaterialListCmd = &cobra.Command{
+	Use:   "material-list",
+	Short: "列出专案素材",
+	Long: `获取专案的素材列表。
+
+示例：
+  cbi project material-list --project-id 1
+  cbi project material-list --project-id 1 --keyword "视频"
+  cbi project material-list --project-id 1 --page 2 --pageSize 30`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		keyword, _ := cmd.Flags().GetString("keyword")
+		page, _ := cmd.Flags().GetInt("page")
+		pageSize, _ := cmd.Flags().GetInt("pageSize")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.ListMaterials(ctx, &client.MaterialListRequest{
+			ProjectId: projectId,
+			Page:      page,
+			PageSize:  pageSize,
+			Keyword:   keyword,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printMaterialListTable(cmd, result)
+			return nil
+		}
+	},
+}
+
+// printMaterialListTable 表格输出素材列表
+func printMaterialListTable(cmd *cobra.Command, result *client.MaterialListResult) {
+	w := cmd.OutOrStdout()
+
+	fmt.Fprintf(w, "共 %d 条，第 %d/%d 页\n\n",
+		result.Total, result.Page, totalPages(result.Total, result.PageSize))
+
+	if len(result.Materials) == 0 {
+		fmt.Fprintln(w, "无素材")
+		return
+	}
+
+	t := output.NewTableWriter(w)
+	t.AppendHeader("ID", "名称", "类型", "格式", "时长", "创建者")
+
+	for _, m := range result.Materials {
+		creator := "-"
+		if m.Creator != nil {
+			creator = m.Creator.Name
+		}
+		t.AppendRow(
+			strconv.FormatInt(m.ID, 10),
+			m.Name,
+			fileTypeName(m.FileType),
+			m.Format,
+			m.Duration,
+			creator,
+		)
+	}
+
+	t.Render()
+}
+
+// fileTypeName 获取文件类型名称
+func fileTypeName(fileType int) string {
+	switch fileType {
+	case 1:
+		return "视频"
+	case 2:
+		return "图片"
+	default:
+		return fmt.Sprintf("未知(%d)", fileType)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
 	projectCmd.AddCommand(projectCreateCmd)
 	projectCmd.AddCommand(projectScriptListCmd)
+	projectCmd.AddCommand(projectMaterialListCmd)
 
 	// projectListCmd 参数
 	projectListCmd.Flags().String("keyword", "", "搜索关键词")
@@ -347,4 +442,11 @@ func init() {
 	projectScriptListCmd.Flags().Int("page", 1, "页码")
 	projectScriptListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
 	projectScriptListCmd.MarkFlagRequired("project-id")
+
+	// projectMaterialListCmd 参数
+	projectMaterialListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialListCmd.Flags().String("keyword", "", "搜索关键词")
+	projectMaterialListCmd.Flags().Int("page", 1, "页码")
+	projectMaterialListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
+	projectMaterialListCmd.MarkFlagRequired("project-id")
 }
