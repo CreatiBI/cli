@@ -1526,6 +1526,12 @@ func printFileDetail(cmd *cobra.Command, detail *client.FileDetail) {
 			}
 		}
 	}
+
+	if detail.Analysis != "" {
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "AI 视频分析:")
+		fmt.Fprintf(out, "  (JSON 内容，可使用 --format json 查看完整结构)\n")
+	}
 }
 
 // printFileListTable 打印文件列表表格

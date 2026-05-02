@@ -90,6 +90,7 @@ type FileDetail struct {
 	Folders        []FolderInfo `json:"folders"`
 	Creator        *CreatorInfo `json:"creator"`
 	Signals        []Signal     `json:"signals"`
+	Analysis       string       `json:"analysis"` // AI 视频理解分析结果（JSON 字符串）
 }
 
 // Product 关联产品
@@ -873,6 +874,9 @@ func (c *RepositoryClient) GetFileDetail(ctx context.Context, fileID int64) (*Fi
 		detail.Signals = append(detail.Signals, signal)
 		return true
 	})
+
+	// 解析 analysis
+	detail.Analysis = fileData.Get("analysis").String()
 
 	return detail, nil
 }
