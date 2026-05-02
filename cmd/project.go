@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -94,6 +95,62 @@ var projectListCmd = &cobra.Command{
 	},
 }
 
+// projectCreateCmd 创建专案
+var projectCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "创建专案",
+	Long: `创建新专案。
+
+示例：
+  cbi project create --team-id 1 --name "品牌投放"
+  cbi project create --team-id 1 --name "新品推广" --privacy 2 --description "新品上市推广素材"`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		teamId, _ := cmd.Flags().GetInt64("team-id")
+		name, _ := cmd.Flags().GetString("name")
+
+		// 必填参数验证
+		if teamId == 0 {
+			return cliErr.NewCLIError("MISSING_TEAM_ID", "必须指定 --team-id")
+		}
+		if name == "" {
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
+		}
+
+		privacy, _ := cmd.Flags().GetInt("privacy")
+		description, _ := cmd.Flags().GetString("description")
+		templateId, _ := cmd.Flags().GetInt64("template-id")
+		deadlineStart, _ := cmd.Flags().GetString("deadline-start")
+		deadlineEnd, _ := cmd.Flags().GetString("deadline-end")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.CreateProject(ctx, &client.ProjectCreateRequest{
+			TeamId:        teamId,
+			Name:          name,
+			Privacy:       privacy,
+			Description:   description,
+			TemplateId:    templateId,
+			DeadlineStart: deadlineStart,
+			DeadlineEnd:   deadlineEnd,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 专案创建成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  专案 ID: %d\n", result.ProjectId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称: %s\n", result.Name)
+		return nil
+	},
+}
+
 // printProjectListTable 表格输出专案列表
 func printProjectListTable(cmd *cobra.Command, result *client.ProjectListResult) {
 	w := cmd.OutOrStdout()
@@ -151,6 +208,7 @@ func formatDate(s string) string {
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
+	projectCmd.AddCommand(projectCreateCmd)
 
 	// projectListCmd 参数
 	projectListCmd.Flags().String("keyword", "", "搜索关键词")
@@ -159,4 +217,15 @@ func init() {
 	projectListCmd.Flags().Int("scope", 0, "范围筛选（0=所有可见, 1=我加入的）")
 	projectListCmd.Flags().Int("page", 1, "页码")
 	projectListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
+
+	// projectCreateCmd 参数
+	projectCreateCmd.Flags().Int64("team-id", 0, "团队 ID（必填）")
+	projectCreateCmd.Flags().String("name", "", "专案名称（必填）")
+	projectCreateCmd.Flags().Int("privacy", 1, "隐私设置（1=公开, 2=私有）")
+	projectCreateCmd.Flags().String("description", "", "专案描述")
+	projectCreateCmd.Flags().Int64("template-id", 0, "模板 ID")
+	projectCreateCmd.Flags().String("deadline-start", "", "截止日期开始（YYYY-MM-DD）")
+	projectCreateCmd.Flags().String("deadline-end", "", "截止日期结束（YYYY-MM-DD）")
+	projectCreateCmd.MarkFlagRequired("team-id")
+	projectCreateCmd.MarkFlagRequired("name")
 }
