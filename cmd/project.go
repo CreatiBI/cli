@@ -564,18 +564,11 @@ func scriptFormatName(format int) string {
 var projectScriptSaveCmd = &cobra.Command{
 	Use:   "script-save",
 	Short: "保存脚本内容",
-	Long: `保存或修改脚本内容，系统自动从 JSON 内容推导格式。
+	Long: `保存或修改脚本内容。
 
 示例：
-  # 使用 --text 自动生成分镜模板（推荐）
-  cbi project script-save --script-id 37110 --text "开场画面：近景推镜头" --format 2
-  cbi project script-save --script-id 37110 --text "场景1文案,场景2文案,场景3文案" --format 2
-
-  # 使用 --text 自动生成口播模板
-  cbi project script-save --script-id 37110 --text "口播段落1,口播段落2" --format 3
-
-  # 使用 --text 自动生成剪辑模板
-  cbi project script-save --script-id 37110 --text "段落1内容,段落2内容" --format 4
+  # 使用 --text 自动生成 markdown 格式脚本（推荐）
+  cbi project script-save --script-id 37110 --text "脚本标题,第一段内容,第二段内容"
 
   # 传入完整 JSON 模板（高级用法）
   cbi project script-save --script-id 37110 --script '{"type":"doc","content":[...]}'
@@ -604,17 +597,16 @@ var projectScriptSaveCmd = &cobra.Command{
 		refRepoFileIdsStr, _ := cmd.Flags().GetString("ref-repo-file-ids")
 
 		// 参数优先级：--script > --text > --markdown
-		// 如果使用 --text，必须指定 --format（2/3/4）
+		// 如果使用 --text，生成普通 markdown 格式脚本
 		if script == "" && text != "" {
-			if formatVal < 2 || formatVal > 4 {
-				return cliErr.NewCLIError("MISSING_FORMAT", "使用 --text 时必须指定 --format（2=分镜 3=口播 4=剪辑）")
-			}
-			// 根据格式生成模板
+			// 将文本转换为 markdown 格式（format=1）
 			textParts := strings.Split(text, ",")
 			for i, p := range textParts {
 				textParts[i] = strings.TrimSpace(p)
 			}
-			script = generateScriptTemplate(formatVal, textParts, name)
+			script = generateMarkdownScript(textParts, name)
+			// 强制设置为普通格式
+			formatVal = 1
 		}
 
 		// 解析 ID 列表
@@ -705,18 +697,6 @@ func parseIDListToInt32(s string) []int32 {
 	return result
 }
 
-// generateNanoID 生成 21 位 NanoID
-func generateNanoID() string {
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-	const length = 21
-	b := make([]byte, length)
-	rand.Read(b)
-	for i := range b {
-		b[i] = alphabet[int(b[i])%len(alphabet)]
-	}
-	return string(b)
-}
-
 // generateUUID 生成 UUID 格式
 func generateUUID() string {
 	b := make([]byte, 16)
@@ -724,135 +704,48 @@ func generateUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// generateScriptTemplate 根据格式生成脚本模板
-func generateScriptTemplate(format int, texts []string, title string) string {
-	switch format {
-	case 2:
-		return generateFrameTemplate(texts, title)
-	case 3:
-		return generateSpeechTemplate(texts, title)
-	case 4:
-		return generateClipTemplate(texts, title)
-	default:
-		return ""
+// generateMarkdownScript 生成普通 markdown 格式脚本
+// 将文本转换为 TipTap JSON 结构（多个 heading + paragraph）
+func generateMarkdownScript(texts []string, title string) string {
+	if title == "" && len(texts) > 0 {
+		title = texts[0]
+		texts = texts[1:]
 	}
-}
-
-// generateFrameTemplate 生成分镜格式模板
-func generateFrameTemplate(texts []string, title string) string {
 	if title == "" {
 		title = "脚本标题"
 	}
 
-	// 构建 heading
-	headingID := generateUUID()
-	heading := fmt.Sprintf(`{"type":"heading","attrs":{"id":"%s","data-toc-id":"%s","textAlign":"left","level":1},"content":[{"type":"text","text":"%s"}]}`,
-		headingID, headingID, title)
+	// 构建 title heading
+	titleID := generateUUID()
+	titleHeading := fmt.Sprintf(`{"type":"heading","attrs":{"id":"%s","data-toc-id":"%s","textAlign":"left","level":1},"content":[{"type":"text","text":"%s"}]}`,
+		titleID, titleID, title)
 
-	// 构建 CbiFrame 内容
-	frameItems := []string{}
-	for _, text := range texts {
-		if text == "" {
-			continue
-		}
-		frameItemID := generateNanoID()
-		copyFieldID := generateNanoID()
-		noteFieldID := generateNanoID()
-		descFieldID := generateNanoID()
-		copyParaID := generateUUID()
-		noteParaID := generateUUID()
-		descParaID := generateUUID()
-
-		frameItem := fmt.Sprintf(`{"type":"CbiFrameItem","attrs":{"id":"%s","media":[],"imagePrompt":"","aspectRatio":"9:16","placeholder":"设计画面+文案抓眼球，吸引前3秒停留","duration":6,"property":{"ShotSize":"近景","Movement":"变焦推拉"}},"content":[{"type":"CbiFrameField","attrs":{"id":"%s","label":"Copy","media":[]},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":"%s"}]}]},{"type":"CbiFrameField","attrs":{"id":"%s","label":"Note","media":[]},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":""}]}]},{"type":"CbiFrameField","attrs":{"id":"%s","label":"Description","media":[]},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":""}]}]}]}`,
-			frameItemID, copyFieldID, copyParaID, text, noteFieldID, noteParaID, descFieldID, descParaID)
-		frameItems = append(frameItems, frameItem)
-	}
-
-	frameID := generateNanoID()
-	frameContent := strings.Join(frameItems, ",")
-	frame := fmt.Sprintf(`{"type":"CbiFrame","attrs":{"id":"%s","translateVersions":[],"currentLang":"zh-CN","isLoading":false},"content":[%s]}`,
-		frameID, frameContent)
-
-	return fmt.Sprintf(`{"type":"doc","content":[%s,%s]}`, heading, frame)
-}
-
-// generateSpeechTemplate 生成口播格式模板
-func generateSpeechTemplate(texts []string, title string) string {
-	if title == "" {
-		title = "脚本标题"
-	}
-
-	// 构建 heading
-	headingID := generateUUID()
-	heading := fmt.Sprintf(`{"type":"heading","attrs":{"id":"%s","data-toc-id":"%s","textAlign":"left","level":1},"content":[{"type":"text","text":"%s"}]}`,
-		headingID, headingID, title)
-
-	// 构建 CbiSpeechItem 内容
-	speechItems := []string{}
+	// 构建内容节点
+	contentNodes := []string{titleHeading}
 	for i, text := range texts {
 		if text == "" {
 			continue
 		}
-		speechID := generateNanoID()
-		noteFieldID := generateNanoID()
-		descFieldID := generateNanoID()
-		contentFieldID := generateNanoID()
-		noteParaID := generateUUID()
-		descParaID := generateUUID()
-		contentParaID := generateUUID()
-
-		speechTitle := fmt.Sprintf("口播段落%d", i+1)
-		speechItem := fmt.Sprintf(`{"type":"CbiSpeechItem","attrs":{"id":"%s","media":[],"property":{},"shootingMaterial":[],"title":"%s"},"content":[{"type":"CbiSpeechField","attrs":{"id":"%s","label":"Note","media":[]},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":""}]}]},{"type":"CbiSpeechField","attrs":{"id":"%s","label":"Description","media":[]},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":""}]}]},{"type":"CbiSpeechField","attrs":{"id":"%s","label":"Content","media":[]},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":"%s"}]}]}]}`,
-			speechID, speechTitle, noteFieldID, noteParaID, descFieldID, descParaID, contentFieldID, contentParaID, text)
-		speechItems = append(speechItems, speechItem)
-	}
-
-	speechContent := strings.Join(speechItems, ",")
-	return fmt.Sprintf(`{"type":"doc","content":[%s,%s]}`, heading, speechContent)
-}
-
-// generateClipTemplate 生成剪辑格式模板
-func generateClipTemplate(texts []string, title string) string {
-	if title == "" {
-		title = "脚本标题"
-	}
-
-	// 构建 heading
-	headingID := generateUUID()
-	heading := fmt.Sprintf(`{"type":"heading","attrs":{"id":"%s","data-toc-id":"%s","textAlign":"left","level":1},"content":[{"type":"text","text":"%s"}]}`,
-		headingID, headingID, title)
-
-	// 构建 segments
-	segments := []string{}
-	for i, text := range texts {
-		if text == "" {
-			continue
+		// 第一个内容作为 heading，其余作为 paragraph
+		if i == 0 {
+			headingID := generateUUID()
+			heading := fmt.Sprintf(`{"type":"heading","attrs":{"id":"%s","data-toc-id":"%s","textAlign":"left","level":2},"content":[{"type":"text","text":"%s"}]}`,
+				headingID, headingID, text)
+			contentNodes = append(contentNodes, heading)
+		} else {
+			paraID := generateUUID()
+			para := fmt.Sprintf(`{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":"%s"}]}`,
+				paraID, text)
+			contentNodes = append(contentNodes, para)
 		}
-		segID := generateNanoID()
-		seg := fmt.Sprintf(`{"id":"%s","label":"段落%d","media":[]}`, segID, i+1)
-		segments = append(segments, seg)
 	}
 
-	// 构建 CbiClipItemContent
-	clipContents := []string{}
-	for i, text := range texts {
-		if text == "" {
-			continue
-		}
-		contentID := generateNanoID()
-		paraID := generateUUID()
-		clipContent := fmt.Sprintf(`{"type":"CbiClipItemContent","attrs":{"id":"%s","placeholder":"段落%d的内容描述"},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":"%s"}]}]}`,
-			contentID, i+1, paraID, text)
-		clipContents = append(clipContents, clipContent)
-	}
+	// 结尾空 paragraph
+	endParaID := generateUUID()
+	contentNodes = append(contentNodes, fmt.Sprintf(`{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"}}`, endParaID))
 
-	clipID := generateNanoID()
-	segmentsJSON := strings.Join(segments, ",")
-	clipContentJSON := strings.Join(clipContents, ",")
-	clip := fmt.Sprintf(`{"type":"CbiClipItem","attrs":{"id":"%s","audio":[],"deprecate":false,"duration":0,"segments":[%s],"visible":{"audio":true,"content":true,"media":true,"structure":true}},"content":[%s]}`,
-		clipID, segmentsJSON, clipContentJSON)
-
-	return fmt.Sprintf(`{"type":"doc","content":[%s,%s]}`, heading, clip)
+	nodesJSON := strings.Join(contentNodes, ",")
+	return fmt.Sprintf(`{"type":"doc","content":[%s]}`, nodesJSON)
 }
 
 // projectMaterialFissionFromTaskCmd 从脚本创建裂变素材
@@ -1110,10 +1003,10 @@ func init() {
 	// projectScriptSaveCmd 参数
 	projectScriptSaveCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
 	projectScriptSaveCmd.Flags().Int64("project-id", 0, "专案 ID（可选）")
-	projectScriptSaveCmd.Flags().Int("format", 0, "脚本格式（可选，不传自动推导：1=普通 2=分镜 3=口播 4=剪辑）")
+	projectScriptSaveCmd.Flags().Int("format", 0, "脚本格式（可选，不传自动推导：1=普通）")
 	projectScriptSaveCmd.Flags().String("name", "", "脚本名称（可选）")
-	projectScriptSaveCmd.Flags().String("script", "", "脚本内容 JSON（分镜/口播/剪辑格式，完整模板）")
-	projectScriptSaveCmd.Flags().String("text", "", "文本内容（自动生成模板，逗号分隔多段）")
+	projectScriptSaveCmd.Flags().String("script", "", "脚本内容 JSON（完整模板）")
+	projectScriptSaveCmd.Flags().String("text", "", "文本内容（自动生成 markdown 格式，逗号分隔：标题,内容1,内容2...）")
 	projectScriptSaveCmd.Flags().String("markdown", "", "Markdown 内容（普通格式）")
 	projectScriptSaveCmd.Flags().String("product-ids", "", "关联产品 ID（逗号分隔）")
 	projectScriptSaveCmd.Flags().String("app-ids", "", "关联渠道应用 ID（逗号分隔）")
