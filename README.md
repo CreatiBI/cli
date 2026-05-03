@@ -1006,12 +1006,11 @@ cbi project script-get --script-id 37110 --format json
 
 保存脚本内容，系统自动从 JSON 内容推导格式。
 
-```bash
-# 保存分镜格式脚本（自动推导 format=2）
-cbi project script-save --script-id 37110 --script '{"type":"doc","content":[{"type":"CbiFrame","attrs":{"title":"场景1"}}]}'
+**重要：script 字段必须使用与前端一致的 TipTap/ProseMirror 文档结构，包含完整的必填字段（id、attrs 等）。**
 
-# 保存口播格式脚本（自动推导 format=3）
-cbi project script-save --script-id 37110 --script '{"type":"doc","content":[{"type":"CbiSpeechItem"}]}'
+```bash
+# 保存分镜格式脚本（需要完整模板结构）
+cbi project script-save --script-id 37110 --script '{"type":"doc","content":[{"type":"CbiFrame","attrs":{"id":"UNbkzhWYnb0hQbYE9z201","translateVersions":[],"currentLang":"zh-CN","isLoading":false},"content":[{"type":"CbiFrameItem","attrs":{"id":"gyWWFKrzFtpctixlqZvw","media":[],"imagePrompt":"","aspectRatio":"9:16","placeholder":"设计画面","duration":6,"property":{"ShotSize":"近景","Movement":"变焦推拉"}},"content":[{"type":"CbiFrameField","attrs":{"id":"cDafS5SMKYaL7HeRmagN","label":"Copy","media":[]},"content":[{"type":"paragraph","attrs":{"id":"9c5341f1eaed429db00670aa06456082","class":null,"textAlign":"left"},"content":[{"type":"text","text":"口播文案"}]}]}]}]}]}'
 
 # 保存普通 Markdown 脚本
 cbi project script-save --script-id 37110 --markdown "# 标题\n正文内容"
@@ -1028,7 +1027,7 @@ cbi project script-save --script-id 37110 --product-ids 1,2 --app-ids 10 --ratio
 - `--project-id`: 专案 ID（可选）
 - `--format`: 脚本格式（可选，不传自动推导：1=普通 2=分镜 3=口播 4=剪辑）
 - `--name`: 脚本名称（可选）
-- `--script`: 脚本内容 JSON（分镜/口播/剪辑格式）
+- `--script`: 脚本内容 JSON（分镜/口播/剪辑格式，**必须使用完整模板结构**）
 - `--markdown`: Markdown 内容（普通格式）
 - `--product-ids`: 关联产品 ID（逗号分隔）
 - `--app-ids`: 关联渠道应用 ID（逗号分隔）
@@ -1042,6 +1041,99 @@ cbi project script-save --script-id 37110 --product-ids 1,2 --app-ids 10 --ratio
   - `CbiClipItem` → format=4（剪辑）
   - 无以上节点 → format=1（普通）
 - 传入 `markdown` 时 → format=1（普通）
+
+#### 脚本 JSON 模板（分镜格式）
+
+```json
+{
+  "type": "doc",
+  "content": [
+    {
+      "type": "heading",
+      "attrs": {
+        "id": "a649a3ee-8a73-4fc0-9f5a-5bbf72edc07c",
+        "data-toc-id": "a649a3ee-8a73-4fc0-9f5a-5bbf72edc07c",
+        "textAlign": "left",
+        "level": 1
+      },
+      "content": [{"type": "text", "text": "脚本标题"}]
+    },
+    {
+      "type": "CbiFrame",
+      "attrs": {
+        "id": "UNbkzhWYnb0hQbYE9z201",
+        "translateVersions": [],
+        "currentLang": "zh-CN",
+        "isLoading": false
+      },
+      "content": [
+        {
+          "type": "CbiFrameItem",
+          "attrs": {
+            "id": "gyWWFKrzFtpctixlq-Zvw",
+            "media": [],
+            "imagePrompt": "",
+            "aspectRatio": "9:16",
+            "placeholder": "设计画面+文案抓眼球",
+            "duration": 6,
+            "property": {"ShotSize": "近景", "Movement": "变焦推拉"}
+          },
+          "content": [
+            {
+              "type": "CbiFrameField",
+              "attrs": {"id": "cDafS5SMKYaL7_HeRmagN", "label": "Copy", "media": []},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {"id": "9c5341f1-eaed-429d-b006-70aa06456082", "class": null, "textAlign": "left"},
+                  "content": [{"type": "text", "text": "口播文案内容"}]
+                }
+              ]
+            },
+            {
+              "type": "CbiFrameField",
+              "attrs": {"id": "i81lzFbsBqJ-h54CSOWlV", "label": "Note", "media": []},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {"id": "9c5341f1-eaed-429d-b006-70aa06456082", "class": null, "textAlign": "left"},
+                  "content": [{"type": "text", "text": "备注信息"}]
+                }
+              ]
+            },
+            {
+              "type": "CbiFrameField",
+              "attrs": {"id": "jDdiyOhJirjTyuP8fE3u3", "label": "Description", "media": []},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {"id": "874b79d5-8c2a-4e3b-8ef1-7ecf86959cbd", "class": null, "textAlign": "left"},
+                  "content": [{"type": "text", "text": "画面描述"}]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**必填字段说明：**
+
+| 节点 | 必填字段 |
+|------|---------|
+| CbiFrame | id（21位 NanoID） |
+| CbiFrameItem | id, media, aspectRatio, duration, property |
+| CbiFrameField | id, label（Copy/Note/Description）, media |
+| paragraph | id（UUID格式）, textAlign |
+
+**口播格式（CbiSpeechItem）和剪辑格式（CbiClipItem）模板结构类似，详见 OpenAPI 文档。**
+
+**ID 生成建议：**
+- NanoID（21位）：用于 CbiFrame.id、CbiFrameItem.id、CbiFrameField.id 等
+- UUID：用于 heading.attrs.id、paragraph.attrs.id
 
 **customFields 说明：**
 
