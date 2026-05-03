@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -464,6 +465,220 @@ var projectScriptCreateCmd = &cobra.Command{
 	},
 }
 
+// projectScriptGetCmd 获取脚本内容
+var projectScriptGetCmd = &cobra.Command{
+	Use:   "script-get",
+	Short: "获取脚本内容",
+	Long: `获取脚本的完整内容，包括格式、JSON/Markdown 内容和关联信息。
+
+示例：
+  cbi project script-get --script-id 37110
+  cbi project script-get --script-id 37110 --project-id 2359`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		scriptId, _ := cmd.Flags().GetInt64("script-id")
+		if scriptId == 0 {
+			return cliErr.NewCLIError("MISSING_SCRIPT_ID", "必须指定 --script-id")
+		}
+
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.GetScriptContent(ctx, &client.GetScriptContentRequest{
+			ScriptId:  scriptId,
+			ProjectId: projectId,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printScriptContent(cmd, result)
+			return nil
+		}
+	},
+}
+
+// printScriptContent 表格输出脚本内容
+func printScriptContent(cmd *cobra.Command, result *client.ScriptContent) {
+	w := cmd.OutOrStdout()
+
+	fmt.Fprintf(w, "脚本内容:\n")
+	fmt.Fprintf(w, "  ID:         %d\n", result.ScriptId)
+	fmt.Fprintf(w, "  专案 ID:    %d\n", result.ProjectId)
+	fmt.Fprintf(w, "  名称:       %s\n", result.Name)
+	fmt.Fprintf(w, "  格式:       %s\n", scriptFormatName(result.Format))
+	fmt.Fprintf(w, "  创建时间:   %s\n", result.CreatedAt)
+	fmt.Fprintf(w, "  更新时间:   %s\n", result.UpdatedAt)
+
+	if len(result.ProductIds) > 0 {
+		fmt.Fprintf(w, "  关联产品:   %v\n", result.ProductIds)
+	}
+	if len(result.AppIds) > 0 {
+		fmt.Fprintf(w, "  关联应用:   %v\n", result.AppIds)
+	}
+	if len(result.Ratios) > 0 {
+		fmt.Fprintf(w, "  关联尺寸:   %v\n", result.Ratios)
+	}
+	if len(result.RefRepoFileIds) > 0 {
+		fmt.Fprintf(w, "  引用文件:   %v\n", result.RefRepoFileIds)
+	}
+
+	// 输出内容
+	if result.Markdown != "" {
+		fmt.Fprintf(w, "\nMarkdown 内容:\n%s\n", result.Markdown)
+	}
+	if result.Script != "" {
+		fmt.Fprintf(w, "\n脚本 JSON:\n%s\n", result.Script)
+	}
+}
+
+// scriptFormatName 获取脚本格式名称
+func scriptFormatName(format int) string {
+	switch format {
+	case 1:
+		return "普通(Markdown)"
+	case 2:
+		return "分镜(JSON)"
+	case 3:
+		return "口播(JSON)"
+	case 4:
+		return "剪辑(JSON)"
+	default:
+		return fmt.Sprintf("未知(%d)", format)
+	}
+}
+
+// projectScriptSaveCmd 保存脚本内容
+var projectScriptSaveCmd = &cobra.Command{
+	Use:   "script-save",
+	Short: "保存脚本内容",
+	Long: `保存或修改脚本内容，系统自动从 JSON 内容推导格式。
+
+示例：
+  # 保存分镜格式脚本
+  cbi project script-save --script-id 37110 --script '{"type":"doc","content":[...]}'
+
+  # 保存普通 Markdown 脚本
+  cbi project script-save --script-id 37110 --markdown "# 标题\n正文内容"
+
+  # 更新脚本名称和关联信息
+  cbi project script-save --script-id 37110 --name "新名称" --product-ids 1,2`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		scriptId, _ := cmd.Flags().GetInt64("script-id")
+		if scriptId == 0 {
+			return cliErr.NewCLIError("MISSING_SCRIPT_ID", "必须指定 --script-id")
+		}
+
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		name, _ := cmd.Flags().GetString("name")
+		script, _ := cmd.Flags().GetString("script")
+		markdown, _ := cmd.Flags().GetString("markdown")
+		formatVal, _ := cmd.Flags().GetInt("format")
+		productIdsStr, _ := cmd.Flags().GetString("product-ids")
+		appIdsStr, _ := cmd.Flags().GetString("app-ids")
+		ratiosStr, _ := cmd.Flags().GetString("ratios")
+		refRepoFileIdsStr, _ := cmd.Flags().GetString("ref-repo-file-ids")
+
+		// 解析 ID 列表
+		var productIds, appIds, refRepoFileIds []int64
+		var ratios []int32
+		if productIdsStr != "" {
+			productIds = parseIDListToInt64(productIdsStr)
+		}
+		if appIdsStr != "" {
+			appIds = parseIDListToInt64(appIdsStr)
+		}
+		if ratiosStr != "" {
+			ratios = parseIDListToInt32(ratiosStr)
+		}
+		if refRepoFileIdsStr != "" {
+			refRepoFileIds = parseIDListToInt64(refRepoFileIdsStr)
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.SaveScriptContent(ctx, &client.SaveScriptContentRequest{
+			ScriptId:       scriptId,
+			ProjectId:      projectId,
+			Format:         formatVal,
+			Name:           name,
+			Script:         script,
+			Markdown:       markdown,
+			ProductIds:     productIds,
+			AppIds:         appIds,
+			Ratios:         ratios,
+			RefRepoFileIds: refRepoFileIds,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 脚本内容保存成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  脚本 ID: %d\n", result.ScriptId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  格式:   %s\n", scriptFormatName(result.Format))
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称:   %s\n", result.Name)
+		return nil
+	},
+}
+
+// parseIDListToInt64 解析逗号分隔的 ID 列表为 int64
+func parseIDListToInt64(s string) []int64 {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := []int64{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 64)
+		if err == nil {
+			result = append(result, id)
+		}
+	}
+	return result
+}
+
+// parseIDListToInt32 解析逗号分隔的 ID 列表为 int32
+func parseIDListToInt32(s string) []int32 {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := []int32{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(p, 10, 32)
+		if err == nil {
+			result = append(result, int32(id))
+		}
+	}
+	return result
+}
+
 // projectMaterialFissionFromTaskCmd 从脚本创建裂变素材
 var projectMaterialFissionFromTaskCmd = &cobra.Command{
 	Use:   "fission-from-task",
@@ -667,6 +882,8 @@ func init() {
 	projectCmd.AddCommand(projectScriptListCmd)
 	projectCmd.AddCommand(projectMaterialListCmd)
 	projectCmd.AddCommand(projectScriptCreateCmd)
+	projectCmd.AddCommand(projectScriptGetCmd)
+	projectCmd.AddCommand(projectScriptSaveCmd)
 	projectCmd.AddCommand(projectMaterialCmd)
 	projectMaterialCmd.AddCommand(projectMaterialFissionFromTaskCmd)
 	projectMaterialCmd.AddCommand(projectMaterialDerivativeFromTaskCmd)
@@ -709,6 +926,22 @@ func init() {
 	projectScriptCreateCmd.Flags().String("name", "", "脚本任务名称（必填）")
 	projectScriptCreateCmd.Flags().Int64("parent-id", 0, "父任务 ID")
 	projectScriptCreateCmd.Flags().String("source-object", "", "来源对象")
+
+	// projectScriptGetCmd 参数
+	projectScriptGetCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
+	projectScriptGetCmd.Flags().Int64("project-id", 0, "专案 ID（可选）")
+
+	// projectScriptSaveCmd 参数
+	projectScriptSaveCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
+	projectScriptSaveCmd.Flags().Int64("project-id", 0, "专案 ID（可选）")
+	projectScriptSaveCmd.Flags().Int("format", 0, "脚本格式（可选，不传自动推导：1=普通 2=分镜 3=口播 4=剪辑）")
+	projectScriptSaveCmd.Flags().String("name", "", "脚本名称（可选）")
+	projectScriptSaveCmd.Flags().String("script", "", "脚本内容 JSON（分镜/口播/剪辑格式）")
+	projectScriptSaveCmd.Flags().String("markdown", "", "Markdown 内容（普通格式）")
+	projectScriptSaveCmd.Flags().String("product-ids", "", "关联产品 ID（逗号分隔）")
+	projectScriptSaveCmd.Flags().String("app-ids", "", "关联渠道应用 ID（逗号分隔）")
+	projectScriptSaveCmd.Flags().String("ratios", "", "关联尺寸（逗号分隔）")
+	projectScriptSaveCmd.Flags().String("ref-repo-file-ids", "", "引用仓库文件 ID（逗号分隔）")
 
 	// projectMaterialFissionFromTaskCmd 参数
 	projectMaterialFissionFromTaskCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")

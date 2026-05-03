@@ -855,3 +855,204 @@ func (c *ProjectClient) CreateDerivativeMaterialFromMaterial(ctx context.Context
 		Name:       result.Get("data.name").String(),
 	}, nil
 }
+
+// GetScriptContentRequest 获取脚本内容请求
+type GetScriptContentRequest struct {
+	ScriptId  int64 // 必填
+	ProjectId int64 // 可选，用于权限验证
+}
+
+// ScriptContent 脚本内容
+type ScriptContent struct {
+	ScriptId       int64   `json:"scriptId"`
+	ProjectId      int64   `json:"projectId"`
+	Name           string  `json:"name"`
+	Format         int     `json:"format"`          // 1=普通 2=分镜 3=口播 4=剪辑
+	Script         string  `json:"script"`          // JSON格式，分镜/口播/剪辑时有值
+	Markdown       string  `json:"markdown"`        // Markdown内容，普通格式时有值
+	ProductIds     []int64 `json:"productIds"`      // 关联产品ID
+	AppIds         []int64 `json:"appIds"`          // 关联渠道应用ID
+	Ratios         []int32 `json:"ratios"`          // 关联尺寸
+	RefRepoFileIds []int64 `json:"refRepoFileIds"`  // 引用仓库文件ID
+	CreatedAt      string  `json:"createdAt"`
+	UpdatedAt      string  `json:"updatedAt"`
+}
+
+// GetScriptContent 获取脚本内容
+func (c *ProjectClient) GetScriptContent(ctx context.Context, req *GetScriptContentRequest) (*ScriptContent, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"scriptId": req.ScriptId,
+	}
+	if req.ProjectId > 0 {
+		body["projectId"] = req.ProjectId
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/script/content/get")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("SCRIPT_CONTENT_GET_ERROR",
+			fmt.Sprintf("获取脚本内容失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &ScriptContent{
+		ScriptId:       data.Get("scriptId").Int(),
+		ProjectId:      data.Get("projectId").Int(),
+		Name:           data.Get("name").String(),
+		Format:         int(data.Get("format").Int()),
+		Script:         data.Get("script").String(),
+		Markdown:       data.Get("markdown").String(),
+		ProductIds:     parseInt64Array(data.Get("productIds")),
+		AppIds:         parseInt64Array(data.Get("appIds")),
+		Ratios:         parseInt32Array(data.Get("ratios")),
+		RefRepoFileIds: parseInt64Array(data.Get("refRepoFileIds")),
+		CreatedAt:      data.Get("createdAt").String(),
+		UpdatedAt:      data.Get("updatedAt").String(),
+	}, nil
+}
+
+// SaveScriptContentRequest 保存脚本内容请求
+type SaveScriptContentRequest struct {
+	ScriptId       int64   // 必填
+	ProjectId      int64   // 可选
+	Format         int     // 可选，不传时自动推导
+	Name           string  // 可选
+	Script         string  // 条件必填，分镜/口播/剪辑格式
+	Markdown       string  // 条件必填，普通格式
+	ProductIds     []int64 // 可选
+	AppIds         []int64 // 可选
+	Ratios         []int32 // 可选
+	RefRepoFileIds []int64 // 可选
+}
+
+// SaveScriptContentResult 保存脚本内容结果
+type SaveScriptContentResult struct {
+	ScriptId int64  `json:"scriptId"`
+	Format   int    `json:"format"` // 实际保存的格式（可能与请求不同）
+	Name     string `json:"name"`
+}
+
+// SaveScriptContent 保存脚本内容
+func (c *ProjectClient) SaveScriptContent(ctx context.Context, req *SaveScriptContentRequest) (*SaveScriptContentResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"scriptId": req.ScriptId,
+	}
+	if req.ProjectId > 0 {
+		body["projectId"] = req.ProjectId
+	}
+	if req.Format > 0 {
+		body["format"] = req.Format
+	}
+	if req.Name != "" {
+		body["name"] = req.Name
+	}
+	if req.Script != "" {
+		body["script"] = req.Script
+	}
+	if req.Markdown != "" {
+		body["markdown"] = req.Markdown
+	}
+	if len(req.ProductIds) > 0 {
+		body["productIds"] = req.ProductIds
+	}
+	if len(req.AppIds) > 0 {
+		body["appIds"] = req.AppIds
+	}
+	if len(req.Ratios) > 0 {
+		body["ratios"] = req.Ratios
+	}
+	if len(req.RefRepoFileIds) > 0 {
+		body["refRepoFileIds"] = req.RefRepoFileIds
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/script/content/save")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("SCRIPT_CONTENT_SAVE_ERROR",
+			fmt.Sprintf("保存脚本内容失败 (%d)", codeVal), message)
+	}
+
+	return &SaveScriptContentResult{
+		ScriptId: result.Get("data.scriptId").Int(),
+		Format:   int(result.Get("data.format").Int()),
+		Name:     result.Get("data.name").String(),
+	}, nil
+}
+
+// parseInt64Array 解析 int64 数组
+func parseInt64Array(value gjson.Result) []int64 {
+	if !value.Exists() {
+		return nil
+	}
+	result := []int64{}
+	value.ForEach(func(_, v gjson.Result) bool {
+		result = append(result, v.Int())
+		return true
+	})
+	return result
+}
+
+// parseInt32Array 解析 int32 数组
+func parseInt32Array(value gjson.Result) []int32 {
+	if !value.Exists() {
+		return nil
+	}
+	result := []int32{}
+	value.ForEach(func(_, v gjson.Result) bool {
+		result = append(result, int32(v.Int()))
+		return true
+	})
+	return result
+}

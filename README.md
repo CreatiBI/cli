@@ -113,6 +113,8 @@ cbi
 │   ├── create                # 创建专案
 │   ├── script-list           # 脚本列表
 │   ├── script-create         # 创建脚本任务
+│   ├── script-get            # 获取脚本内容
+│   ├── script-save           # 保存脚本内容
 │   ├── material-list         # 素材列表
 │   └── material              # 素材操作
 │       ├── fission-from-task        # 从脚本创建裂变素材
@@ -977,6 +979,69 @@ cbi project material derivative-from-material --project-id 2 --material-id 200 -
 - `--project-id`: 目标专案 ID（必填，可跨专案）
 - `--material-id`: 来源素材 ID（必填）
 - `--name`: 新素材名称（必填）
+
+### 获取脚本内容
+
+```bash
+# 获取脚本内容
+cbi project script-get --script-id 37110
+
+# 指定专案 ID（用于权限验证）
+cbi project script-get --script-id 37110 --project-id 2359
+
+# JSON 格式输出
+cbi project script-get --script-id 37110 --format json
+```
+
+参数：
+- `--script-id`: 脚本任务 ID（必填）
+- `--project-id`: 专案 ID（可选，用于权限验证）
+
+输出信息包括：
+- 基本信息：ID、专案 ID、名称、格式、创建/更新时间
+- 关联信息：产品、应用、尺寸、引用文件
+- 内容：Markdown（普通格式）或 JSON（分镜/口播/剪辑格式）
+
+### 保存脚本内容
+
+保存脚本内容，系统自动从 JSON 内容推导格式。
+
+```bash
+# 保存分镜格式脚本（自动推导 format=2）
+cbi project script-save --script-id 37110 --script '{"type":"doc","content":[{"type":"CbiFrame","attrs":{"title":"场景1"}}]}'
+
+# 保存口播格式脚本（自动推导 format=3）
+cbi project script-save --script-id 37110 --script '{"type":"doc","content":[{"type":"CbiSpeechItem"}]}'
+
+# 保存普通 Markdown 脚本
+cbi project script-save --script-id 37110 --markdown "# 标题\n正文内容"
+
+# 更新脚本名称
+cbi project script-save --script-id 37110 --name "新名称"
+
+# 更新关联信息
+cbi project script-save --script-id 37110 --product-ids 1,2 --app-ids 10 --ratios 1,2
+```
+
+参数：
+- `--script-id`: 脚本任务 ID（必填）
+- `--project-id`: 专案 ID（可选）
+- `--format`: 脚本格式（可选，不传自动推导：1=普通 2=分镜 3=口播 4=剪辑）
+- `--name`: 脚本名称（可选）
+- `--script`: 脚本内容 JSON（分镜/口播/剪辑格式）
+- `--markdown`: Markdown 内容（普通格式）
+- `--product-ids`: 关联产品 ID（逗号分隔）
+- `--app-ids`: 关联渠道应用 ID（逗号分隔）
+- `--ratios`: 关联尺寸（逗号分隔）
+- `--ref-repo-file-ids`: 引用仓库文件 ID（逗号分隔）
+
+**格式自动推导规则：**
+- 传入 `script` JSON 时，系统自动解析节点类型：
+  - `CbiFrame` → format=2（分镜）
+  - `CbiSpeechItem`/`CbiSpeakItem` → format=3（口播）
+  - `CbiClipItem` → format=4（剪辑）
+  - 无以上节点 → format=1（普通）
+- 传入 `markdown` 时 → format=1（普通）
 
 **customFields 说明：**
 
