@@ -567,8 +567,11 @@ var projectScriptSaveCmd = &cobra.Command{
 	Long: `保存或修改脚本内容。
 
 示例：
-  # 使用 --text 自动生成 markdown 格式脚本（推荐）
+  # 使用 --text 自动生成 markdown 格式脚本（默认）
   cbi project script-save --script-id 37110 --text "脚本标题,第一段内容,第二段内容"
+
+  # 使用 --text 生成剪辑格式脚本
+  cbi project script-save --script-id 37110 --text "开场剪辑,产品演示,品牌收尾" --format 4
 
   # 传入完整 JSON 模板（高级用法）
   cbi project script-save --script-id 37110 --script '{"type":"doc","content":[...]}'
@@ -597,16 +600,21 @@ var projectScriptSaveCmd = &cobra.Command{
 		refRepoFileIdsStr, _ := cmd.Flags().GetString("ref-repo-file-ids")
 
 		// 参数优先级：--script > --text > --markdown
-		// 如果使用 --text，生成普通 markdown 格式脚本
+		// 如果使用 --text，根据 --format 选择模板类型
 		if script == "" && text != "" {
-			// 将文本转换为 markdown 格式（format=1）
 			textParts := strings.Split(text, ",")
 			for i, p := range textParts {
 				textParts[i] = strings.TrimSpace(p)
 			}
-			script = generateMarkdownScript(textParts, name)
-			// 强制设置为普通格式
-			formatVal = 1
+			// 根据 format 选择模板
+			if formatVal == 4 {
+				// 剪辑格式
+				script = generateClipScript(textParts, name)
+			} else {
+				// 默认 markdown 格式（format=1）
+				script = generateMarkdownScript(textParts, name)
+				formatVal = 1
+			}
 		}
 
 		// 解析 ID 列表
@@ -746,6 +754,53 @@ func generateMarkdownScript(texts []string, title string) string {
 
 	nodesJSON := strings.Join(contentNodes, ",")
 	return fmt.Sprintf(`{"type":"doc","content":[%s]}`, nodesJSON)
+}
+
+// generateClipScript 生成剪辑格式脚本
+func generateClipScript(texts []string, title string) string {
+	if title == "" && len(texts) > 0 {
+		title = texts[0]
+		texts = texts[1:]
+	}
+	if title == "" {
+		title = "脚本标题"
+	}
+
+	// 构建 title heading
+	titleID := generateUUID()
+	titleHeading := fmt.Sprintf(`{"type":"heading","attrs":{"id":"%s","data-toc-id":"%s","textAlign":"left","level":1},"content":[{"type":"text","text":"%s"}]}`,
+		titleID, titleID, title)
+
+	// 构建 segments
+	segments := []string{}
+	for i := range texts {
+		segID := generateUUID()
+		seg := fmt.Sprintf(`{"id":"%s","label":"段落%d","media":[]}`, segID, i+1)
+		segments = append(segments, seg)
+	}
+
+	// 构建 CbiClipItemContent
+	clipContents := []string{}
+	for i, text := range texts {
+		if text == "" {
+			continue
+		}
+		contentID := generateUUID()
+		paraID := generateUUID()
+		clipContent := fmt.Sprintf(`{"type":"CbiClipItemContent","attrs":{"id":"%s","placeholder":"段落%d的内容描述"},"content":[{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"},"content":[{"type":"text","text":"%s"}]}]}`,
+			contentID, i+1, paraID, text)
+		clipContents = append(clipContents, clipContent)
+	}
+
+	clipID := generateUUID()
+	segmentsJSON := strings.Join(segments, ",")
+	clipContentJSON := strings.Join(clipContents, ",")
+	clip := fmt.Sprintf(`{"type":"CbiClipItem","attrs":{"id":"%s","segments":[%s],"duration":0,"audio":[],"visible":{"audio":true,"content":true,"media":true,"structure":true},"deprecate":false,"isLoading":false},"content":[%s]}`,
+		clipID, segmentsJSON, clipContentJSON)
+
+	// 结尾 paragraph
+	endParaID := generateUUID()
+	return fmt.Sprintf(`{"type":"doc","content":[%s,%s,{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"}}]}`, titleHeading, clip, endParaID)
 }
 
 // projectMaterialFissionFromTaskCmd 从脚本创建裂变素材
