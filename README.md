@@ -112,7 +112,13 @@ cbi
 │   ├── list                  # 专案列表
 │   ├── create                # 创建专案
 │   ├── script-list           # 脚本列表
-│   └── material-list         # 素材列表
+│   ├── script-create         # 创建脚本任务
+│   ├── material-list         # 素材列表
+│   └── material              # 素材操作
+│       ├── fission-from-task        # 从脚本创建裂变素材
+│       ├── derivative-from-task     # 从脚本创建衍生素材
+│       ├── fission-from-material    # 从素材创建裂变子素材
+│       └── derivative-from-material # 从素材创建衍生子素材
 ├── portfolio                 # 专案集管理
 │   ├── list                  # 专案集列表
 │   └── project-list          # 专案集下的专案列表
@@ -892,6 +898,85 @@ cbi project material-list --project-id 1 --format json
 素材类型：
 - 1 = 视频
 - 2 = 图片
+
+### 创建脚本任务
+
+```bash
+# 创建脚本任务
+cbi project script-create --project-id 1 --name "脚本任务名称"
+
+# 创建子任务（裂变场景）
+cbi project script-create --project-id 1 --name "子任务" --parent-id 100
+
+# 创建衍生任务
+cbi project script-create --project-id 1 --name "衍生任务" --source-object "原任务ID"
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--name`: 脚本任务名称（必填）
+- `--parent-id`: 父任务 ID（可选，裂变场景）
+- `--source-object`: 来源对象（可选，衍生场景）
+
+### 从脚本创建裂变素材
+
+裂变素材与脚本为父子关系，素材的 parentId 指向父脚本 ID，必须在同一专案内。
+
+```bash
+cbi project material fission-from-task --project-id 1 --script-id 100 --name "裂变素材"
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--script-id`: 来源脚本 ID（必填）
+- `--name`: 素材名称（必填）
+
+### 从脚本创建衍生素材
+
+衍生素材与脚本为平级关系，素材的 parentId 为 0，sourceObject 指向原脚本 ID，可跨专案。
+
+```bash
+# 同专案衍生
+cbi project material derivative-from-task --project-id 1 --script-id 100 --name "衍生素材"
+
+# 跨专案衍生
+cbi project material derivative-from-task --project-id 2 --script-id 100 --name "衍生素材"
+```
+
+参数：
+- `--project-id`: 目标专案 ID（必填，可不同于来源专案）
+- `--script-id`: 来源脚本 ID（必填）
+- `--name`: 素材名称（必填）
+
+### 从素材创建裂变子素材
+
+裂变子素材与原素材为父子关系，parentId 指向原素材 ID，必须在同一专案内。
+
+```bash
+cbi project material fission-from-material --project-id 1 --material-id 200 --name "裂变子素材"
+```
+
+参数：
+- `--project-id`: 专案 ID（必填，同原素材所在专案）
+- `--material-id`: 来源素材 ID（必填）
+- `--name`: 新素材名称（必填）
+
+### 从素材创建衍生子素材
+
+衍生子素材与原素材为平级关系，parentId 为 0，sourceObject 指向原素材 ID，可跨专案。
+
+```bash
+# 同专案衍生
+cbi project material derivative-from-material --project-id 1 --material-id 200 --name "衍生子素材"
+
+# 跨专案衍生
+cbi project material derivative-from-material --project-id 2 --material-id 200 --name "衍生子素材"
+```
+
+参数：
+- `--project-id`: 目标专案 ID（必填，可跨专案）
+- `--material-id`: 来源素材 ID（必填）
+- `--name`: 新素材名称（必填）
 
 **customFields 说明：**
 
