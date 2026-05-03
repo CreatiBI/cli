@@ -12,6 +12,8 @@ cbi project create --team-id <id> --name "<name>"
 cbi project script-list --project-id <id>
 cbi project material-list --project-id <id>
 cbi project script-create --project-id <id> --name "<name>"
+cbi project script-get --script-id <id>
+cbi project script-save --script-id <id> --script '<json>'
 cbi project material fission-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material derivative-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material fission-from-material --project-id <id> --material-id <id> --name "<name>"
@@ -51,6 +53,42 @@ cbi project material derivative-from-material --project-id <id> --material-id <i
 
 - 必填：`--project-id`、`--name`
 - 可选：`--parent-id`（裂变场景父任务）、`--source-object`（衍生场景来源对象）
+
+### project script-get
+
+- 必填：`--script-id`
+- 可选：`--project-id`（用于权限验证）
+- 输出重点：
+  - 基本信息（ID、专案 ID、名称、格式、创建/更新时间）
+  - 关联信息（产品、应用、尺寸、引用文件）
+  - 内容（Markdown 或 JSON）
+
+### project script-save
+
+- 必填：`--script-id`
+- 可选：`--project-id`、`--format`、`--name`
+- 内容参数：
+  - `--script`：JSON 脚本内容（分镜/口播/剪辑）
+  - `--markdown`：Markdown 脚本内容（普通）
+- 关联更新参数：
+  - `--product-ids`
+  - `--app-ids`
+  - `--ratios`
+  - `--ref-repo-file-ids`
+
+格式枚举：
+- `1`：普通
+- `2`：分镜
+- `3`：口播
+- `4`：剪辑
+
+自动推导规则（未显式传 `format` 时）：
+- 传 `script` JSON：
+  - 含 `CbiFrame` 节点 → `format=2`
+  - 含 `CbiSpeechItem`/`CbiSpeakItem` 节点 → `format=3`
+  - 含 `CbiClipItem` 节点 → `format=4`
+  - 其他 → `format=1`
+- 传 `markdown` → `format=1`
 
 ### project material fission-from-task
 

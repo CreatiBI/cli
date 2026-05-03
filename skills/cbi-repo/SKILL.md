@@ -54,6 +54,8 @@ trigger:
   - "project list"
   - "project create"
   - "project script-list"
+  - "project script-get"
+  - "project script-save"
   - "project script-create"
   - "project material-list"
   - "project material fission-from-task"
@@ -63,6 +65,10 @@ trigger:
   - "专案列表"
   - "创建专案"
   - "创建任务"
+  - "获取脚本内容"
+  - "保存脚本内容"
+  - "脚本编辑"
+  - "脚本保存"
   - "创建脚本任务"
   - "衍生"
   - "裂变"
@@ -120,6 +126,8 @@ depends_on:
 | 专案脚本列表 | 按状态、关键词、父任务和归档状态筛选 |
 | 专案素材列表 | 按关键词检索专案下视频/图片素材 |
 | 创建脚本任务 | 创建普通任务、子任务（裂变）或来源任务（衍生） |
+| 获取脚本内容 | 读取脚本任务内容与关联信息 |
+| 保存脚本内容 | 保存脚本 JSON/Markdown，并可更新关联信息 |
 | 脚本转裂变素材 | 从脚本创建同专案父子关系裂变素材 |
 | 脚本转衍生素材 | 从脚本创建可跨专案的平级衍生素材 |
 | 素材转裂变子素材 | 从素材创建同专案父子关系裂变子素材 |
@@ -149,6 +157,10 @@ depends_on:
 - `project script-list` 重点筛选字段：`state`、`parent-id`、`is-archived`。
 - `project material-list` 重点筛选字段：`keyword` 与分页；素材类型通常为 1=视频、2=图片。
 - `project script-create` 支持 `parent-id`（裂变子任务）与 `source-object`（衍生任务来源）。
+- `project script-get` 用于读取脚本内容，支持可选 `project-id` 做权限验证。
+- `project script-save` 支持 `script`（JSON）与 `markdown` 两种内容写入方式。
+- `project script-save` 可同时更新 `name`、`product-ids`、`app-ids`、`ratios`、`ref-repo-file-ids`。
+- `project script-save` 在未显式传 `format` 时会按内容自动推导格式。
 - `project material fission-from-task`：必须同专案，素材 parentId 指向来源脚本。
 - `project material derivative-from-task`：可跨专案，素材 parentId=0，sourceObject 指向来源脚本。
 - `project material fission-from-material`：必须同专案，子素材 parentId 指向来源素材。
@@ -177,6 +189,8 @@ cbi project create --team-id <id> --name "<name>"
 cbi project script-list --project-id <id>
 cbi project material-list --project-id <id>
 cbi project script-create --project-id <id> --name "<name>"
+cbi project script-get --script-id <id>
+cbi project script-save --script-id <id> --script '<json>'
 cbi project material fission-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material derivative-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material fission-from-material --project-id <id> --material-id <id> --name "<name>"
