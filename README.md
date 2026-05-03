@@ -1,8 +1,8 @@
 # CreatiBI CLI
 
-CreatiBI 命令行工具，用于素材库管理。
+CreatiBI 命令行工具，用于广告素材驱动的买量解决方案。
 
-支持 OAuth 登录和素材库文件操作，通过命令行安全、便捷地管理创意素材。
+支持 OAuth 登录、素材库管理、专案管理和专案集管理，通过命令行安全、便捷地管理创意素材与投放流程。
 
 ## 安装
 
@@ -47,6 +47,8 @@ npx skills add CreatiBI/cli -y -g
 - `cbi 上传`、`cbi repository`
 - `repository file-create`、`file-list`、`file-detail`
 - `文件查重`、`批量添加标签`、`批量添加文件夹`
+- `cbi project`、`专案`、`专案列表`
+- `cbi portfolio`、`专案集`、`专案集列表`
 
 ## 快速开始
 
@@ -60,11 +62,11 @@ cbi auth login
 # 3. 查看素材库列表
 cbi repository list
 
-# 4. 查看素材文件列表
-cbi repository file-list --repository-id 1
+# 4. 查看专案集列表
+cbi portfolio list
 
-# 5. 获取文件详情
-cbi repository file-detail 123
+# 5. 查看专案列表
+cbi project list
 
 # 6. 上传文件到素材库
 cbi repository file-create --repository-id 1 --file ./image.png

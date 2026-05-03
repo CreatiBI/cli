@@ -242,5 +242,4 @@ func init() {
 	portfolioProjectListCmd.Flags().String("keyword", "", "搜索关键词")
 	portfolioProjectListCmd.Flags().Int("page", 1, "页码")
 	portfolioProjectListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
-	portfolioProjectListCmd.MarkFlagRequired("portfolio-id")
 }
