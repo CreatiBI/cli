@@ -1,6 +1,6 @@
 ---
 name: cbi-repo
-description: 使用 CreatiBI CLI（cbi）管理素材库与专案能力，包括文件、文件夹、标签、关联产品、视频理解信号、AI 视频分析结果、爆点片段、专案列表与创建、专案脚本列表、专案素材列表；在用户提到上传到素材库、查询文件或专案、查看信号或分镜表、维护素材元数据、先初始化 cbi 或先登录再操作等场景时使用。
+description: 使用 CreatiBI CLI（cbi）管理素材库、专案和专案集能力，包括文件、文件夹、标签、关联产品、视频理解信号、AI 视频分析结果、爆点片段、专案列表与创建、专案脚本/素材列表、专案集列表与专案集下专案列表；在用户提到上传到素材库、查询文件或专案、查看信号或分镜表、维护素材元数据、查看专案集、先初始化 cbi 或先登录再操作等场景时使用。
 trigger:
   - "cbi"
   - "素材库"
@@ -54,18 +54,35 @@ trigger:
   - "project list"
   - "project create"
   - "project script-list"
+  - "project script-create"
   - "project material-list"
+  - "project material fission-from-task"
+  - "project material derivative-from-task"
+  - "project material fission-from-material"
+  - "project material derivative-from-material"
   - "专案列表"
   - "创建专案"
+  - "创建任务"
+  - "创建脚本任务"
+  - "衍生"
+  - "裂变"
+  - "裂变素材"
+  - "衍生素材"
   - "专案脚本"
   - "专案素材"
+  - "专案集"
+  - "专案集列表"
+  - "portfolio"
+  - "cbi portfolio"
+  - "portfolio list"
+  - "portfolio project-list"
 depends_on:
   - cbi-shared
 ---
 
 # CreatiBI CLI 素材库管理
 
-负责素材库与专案能力的查询、上传与元数据维护。`signals` 和 `analysis` 定义见 [references/video-intelligence.md](references/video-intelligence.md)，专案字段见 [references/project.md](references/project.md)。
+负责素材库、专案、专案集能力的查询、上传与元数据维护。`signals` 和 `analysis` 定义见 [references/video-intelligence.md](references/video-intelligence.md)，专案字段见 [references/project.md](references/project.md)，专案集字段见 [references/portfolio.md](references/portfolio.md)。
 
 ## 交互规范
 
@@ -102,12 +119,20 @@ depends_on:
 | 创建专案 | 按团队创建公开或私有专案，并可设置日期范围 |
 | 专案脚本列表 | 按状态、关键词、父任务和归档状态筛选 |
 | 专案素材列表 | 按关键词检索专案下视频/图片素材 |
+| 创建脚本任务 | 创建普通任务、子任务（裂变）或来源任务（衍生） |
+| 脚本转裂变素材 | 从脚本创建同专案父子关系裂变素材 |
+| 脚本转衍生素材 | 从脚本创建可跨专案的平级衍生素材 |
+| 素材转裂变子素材 | 从素材创建同专案父子关系裂变子素材 |
+| 素材转衍生子素材 | 从素材创建可跨专案的平级衍生子素材 |
+| 专案集列表 | 按关键词、可见范围和分页筛选 |
+| 专案集下专案列表 | 查看某个专案集下的专案并按关键词筛选 |
 
 ## 查询规则
 
 - `--keyword` 搜索名称和 `signals`，不是搜索 `analysis`。
 - `--has-signals` 只判断是否存在视频理解信号。
 - 有条件筛选时保持单一维度，不要把多个筛选模式混在一起。
+- 当用户要求“完整 AI 分析 JSON”时，优先使用 JSON 输出查看 `analysis` 原始结构。
 
 ## 写入操作
 
@@ -115,6 +140,7 @@ depends_on:
 - 重复上传默认跳过；需要强制写入时先向用户确认。
 - 删除类操作默认按最小风险表达，明确说明影响范围。
 - 创建专案前先确认团队 ID、专案名称和隐私级别（1=公开，2=私有）。
+- 上传文件可按需带 `name`、`note`、`rating`、`source-url`、`tags` 等扩展参数。
 
 ## 专案规则
 
@@ -122,7 +148,19 @@ depends_on:
 - `project create` 需要 `team-id` 与 `name`，可选 `privacy`、`description`、`template-id`、`deadline-start`、`deadline-end`。
 - `project script-list` 重点筛选字段：`state`、`parent-id`、`is-archived`。
 - `project material-list` 重点筛选字段：`keyword` 与分页；素材类型通常为 1=视频、2=图片。
+- `project script-create` 支持 `parent-id`（裂变子任务）与 `source-object`（衍生任务来源）。
+- `project material fission-from-task`：必须同专案，素材 parentId 指向来源脚本。
+- `project material derivative-from-task`：可跨专案，素材 parentId=0，sourceObject 指向来源脚本。
+- `project material fission-from-material`：必须同专案，子素材 parentId 指向来源素材。
+- `project material derivative-from-material`：可跨专案，子素材 parentId=0，sourceObject 指向来源素材。
 - 当用户提到“我加入的专案”，将 `scope` 设为 `1`；未指定时默认全可见范围。
+
+## 专案集规则
+
+- `portfolio list` 支持 `keyword`、`scope`、分页，`scope=1` 表示“我加入的专案集”。
+- `portfolio project-list` 需要 `portfolio-id`，可选 `keyword` 与分页。
+- 专案集可见性常见枚举：1=公开，2=私有。
+- 专案状态常见枚举：1=正常进行，2=有风险，3=偏离轨道，4=暂停，5=完成，6=无更新。
 
 ## 内部命令骨架
 
@@ -138,10 +176,18 @@ cbi project list
 cbi project create --team-id <id> --name "<name>"
 cbi project script-list --project-id <id>
 cbi project material-list --project-id <id>
+cbi project script-create --project-id <id> --name "<name>"
+cbi project material fission-from-task --project-id <id> --script-id <id> --name "<name>"
+cbi project material derivative-from-task --project-id <id> --script-id <id> --name "<name>"
+cbi project material fission-from-material --project-id <id> --material-id <id> --name "<name>"
+cbi project material derivative-from-material --project-id <id> --material-id <id> --name "<name>"
+cbi portfolio list
+cbi portfolio project-list --portfolio-id <id>
 ```
 
 ## 参考
 
 - [references/video-intelligence.md](references/video-intelligence.md)
 - [references/project.md](references/project.md)
+- [references/portfolio.md](references/portfolio.md)
 - 仓库根目录 `README.md` 的素材库章节
