@@ -111,6 +111,9 @@ cbi
 │   ├── create                # 创建专案
 │   ├── script-list           # 脚本列表
 │   └── material-list         # 素材列表
+├── portfolio                 # 专案集管理
+│   ├── list                  # 专案集列表
+│   └── project-list          # 专案集下的专案列表
 ```
 
 ---
@@ -897,6 +900,69 @@ cbi project material-list --project-id 1 --format json
 | 1 | 固定字段 |
 | 2 | 固有字段 |
 | 3 | 自定义字段 |
+
+---
+
+## 专案集模块 (portfolio)
+
+### 列出专案集
+
+```bash
+# 列出所有可见专案集
+cbi portfolio list
+
+# 搜索关键词
+cbi portfolio list --keyword "品牌"
+
+# 筛选我加入的专案集
+cbi portfolio list --scope 1
+
+# 分页查询
+cbi portfolio list --page 2 --pageSize 30
+
+# JSON 格式
+cbi portfolio list --format json
+```
+
+参数：
+- `--keyword`: 搜索关键词
+- `--scope`: 范围筛选（0=所有可见, 1=我加入的）
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+可见性：
+- 1 = 公开
+- 2 = 私有
+
+### 列出专案集下的专案
+
+```bash
+# 列出专案集所有专案
+cbi portfolio project-list --portfolio-id 1
+
+# 搜索关键词
+cbi portfolio project-list --portfolio-id 1 --keyword "投放"
+
+# 分页查询
+cbi portfolio project-list --portfolio-id 1 --page 2 --pageSize 30
+
+# JSON 格式
+cbi portfolio project-list --portfolio-id 1 --format json
+```
+
+参数：
+- `--portfolio-id`: 专案集 ID（必填）
+- `--keyword`: 搜索关键词
+- `--page`: 页码（默认 1）
+- `--pageSize`: 每页条数（默认 20，最大 50）
+
+专案状态：
+- 1 = 正常进行
+- 2 = 有风险
+- 3 = 偏离轨道
+- 4 = 暂停
+- 5 = 完成
+- 6 = 无更新
 
 ---
 
