@@ -407,12 +407,271 @@ func fileTypeName(fileType int) string {
 	}
 }
 
+// projectMaterialCmd 素材操作命令组
+var projectMaterialCmd = &cobra.Command{
+	Use:   "material",
+	Short: "素材操作",
+	Long:  `素材操作命令组，包括从脚本创建素材、从素材创建子素材等。`,
+}
+
+// projectScriptCreateCmd 创建脚本任务
+var projectScriptCreateCmd = &cobra.Command{
+	Use:   "script-create",
+	Short: "创建脚本任务",
+	Long: `创建新的脚本任务。
+
+示例：
+  cbi project script-create --project-id 1 --name "脚本任务名称"
+  cbi project script-create --project-id 1 --name "子任务" --parent-id 100`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		name, _ := cmd.Flags().GetString("name")
+
+		// 必填参数验证
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+		if name == "" {
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
+		}
+
+		parentId, _ := cmd.Flags().GetInt64("parent-id")
+		sourceObject, _ := cmd.Flags().GetString("source-object")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.CreateScriptTask(ctx, &client.CreateScriptTaskRequest{
+			ProjectId:    projectId,
+			Name:         name,
+			ParentId:     parentId,
+			SourceObject: sourceObject,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 脚本任务创建成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  脚本 ID: %d\n", result.ScriptId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称: %s\n", result.Name)
+		return nil
+	},
+}
+
+// projectMaterialFissionFromTaskCmd 从脚本创建裂变素材
+var projectMaterialFissionFromTaskCmd = &cobra.Command{
+	Use:   "fission-from-task",
+	Short: "从脚本创建裂变素材",
+	Long: `从脚本任务创建裂变素材，素材与脚本为父子关系。
+
+示例：
+  cbi project material fission-from-task --project-id 1 --script-id 100 --name "裂变素材"`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		scriptId, _ := cmd.Flags().GetInt64("script-id")
+		name, _ := cmd.Flags().GetString("name")
+
+		// 必填参数验证
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+		if scriptId == 0 {
+			return cliErr.NewCLIError("MISSING_SCRIPT_ID", "必须指定 --script-id")
+		}
+		if name == "" {
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.CreateFissionMaterialFromTask(ctx, &client.CreateFissionMaterialFromTaskRequest{
+			ProjectId: projectId,
+			ScriptId:  scriptId,
+			Name:      name,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 裂变素材创建成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  素材 ID: %d\n", result.MaterialId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称: %s\n", result.Name)
+		return nil
+	},
+}
+
+// projectMaterialDerivativeFromTaskCmd 从脚本创建衍生素材
+var projectMaterialDerivativeFromTaskCmd = &cobra.Command{
+	Use:   "derivative-from-task",
+	Short: "从脚本创建衍生素材",
+	Long: `从脚本任务创建衍生素材，素材与脚本为平级关系，可跨专案。
+
+示例：
+  cbi project material derivative-from-task --project-id 1 --script-id 100 --name "衍生素材"`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		scriptId, _ := cmd.Flags().GetInt64("script-id")
+		name, _ := cmd.Flags().GetString("name")
+
+		// 必填参数验证
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+		if scriptId == 0 {
+			return cliErr.NewCLIError("MISSING_SCRIPT_ID", "必须指定 --script-id")
+		}
+		if name == "" {
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.CreateDerivativeMaterialFromTask(ctx, &client.CreateDerivativeMaterialFromTaskRequest{
+			ProjectId: projectId,
+			ScriptId:  scriptId,
+			Name:      name,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 衍生素材创建成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  素材 ID: %d\n", result.MaterialId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称: %s\n", result.Name)
+		return nil
+	},
+}
+
+// projectMaterialFissionFromMaterialCmd 从素材创建裂变子素材
+var projectMaterialFissionFromMaterialCmd = &cobra.Command{
+	Use:   "fission-from-material",
+	Short: "从素材创建裂变子素材",
+	Long: `从已有素材创建裂变子素材，新素材与原素材为父子关系。
+
+示例：
+  cbi project material fission-from-material --project-id 1 --material-id 100 --name "裂变子素材"`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		materialId, _ := cmd.Flags().GetInt64("material-id")
+		name, _ := cmd.Flags().GetString("name")
+
+		// 必填参数验证
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+		if materialId == 0 {
+			return cliErr.NewCLIError("MISSING_MATERIAL_ID", "必须指定 --material-id")
+		}
+		if name == "" {
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.CreateFissionMaterialFromMaterial(ctx, &client.CreateFissionMaterialFromMaterialRequest{
+			ProjectId:  projectId,
+			MaterialId: materialId,
+			Name:       name,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 裂变子素材创建成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  素材 ID: %d\n", result.MaterialId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称: %s\n", result.Name)
+		return nil
+	},
+}
+
+// projectMaterialDerivativeFromMaterialCmd 从素材创建衍生子素材
+var projectMaterialDerivativeFromMaterialCmd = &cobra.Command{
+	Use:   "derivative-from-material",
+	Short: "从素材创建衍生子素材",
+	Long: `从已有素材创建衍生子素材，新素材与原素材为平级关系，可跨专案。
+
+示例：
+  cbi project material derivative-from-material --project-id 1 --material-id 100 --name "衍生子素材"`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		materialId, _ := cmd.Flags().GetInt64("material-id")
+		name, _ := cmd.Flags().GetString("name")
+
+		// 必填参数验证
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+		if materialId == 0 {
+			return cliErr.NewCLIError("MISSING_MATERIAL_ID", "必须指定 --material-id")
+		}
+		if name == "" {
+			return cliErr.NewCLIError("MISSING_NAME", "必须指定 --name")
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.CreateDerivativeMaterialFromMaterial(ctx, &client.CreateDerivativeMaterialFromMaterialRequest{
+			ProjectId:  projectId,
+			MaterialId: materialId,
+			Name:       name,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 衍生子素材创建成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  素材 ID: %d\n", result.MaterialId)
+		fmt.Fprintf(cmd.OutOrStdout(), "  名称: %s\n", result.Name)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
 	projectCmd.AddCommand(projectCreateCmd)
 	projectCmd.AddCommand(projectScriptListCmd)
 	projectCmd.AddCommand(projectMaterialListCmd)
+	projectCmd.AddCommand(projectScriptCreateCmd)
+	projectCmd.AddCommand(projectMaterialCmd)
+	projectMaterialCmd.AddCommand(projectMaterialFissionFromTaskCmd)
+	projectMaterialCmd.AddCommand(projectMaterialDerivativeFromTaskCmd)
+	projectMaterialCmd.AddCommand(projectMaterialFissionFromMaterialCmd)
+	projectMaterialCmd.AddCommand(projectMaterialDerivativeFromMaterialCmd)
 
 	// projectListCmd 参数
 	projectListCmd.Flags().String("keyword", "", "搜索关键词")
@@ -444,4 +703,30 @@ func init() {
 	projectMaterialListCmd.Flags().String("keyword", "", "搜索关键词")
 	projectMaterialListCmd.Flags().Int("page", 1, "页码")
 	projectMaterialListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
+
+	// projectScriptCreateCmd 参数
+	projectScriptCreateCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectScriptCreateCmd.Flags().String("name", "", "脚本任务名称（必填）")
+	projectScriptCreateCmd.Flags().Int64("parent-id", 0, "父任务 ID")
+	projectScriptCreateCmd.Flags().String("source-object", "", "来源对象")
+
+	// projectMaterialFissionFromTaskCmd 参数
+	projectMaterialFissionFromTaskCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialFissionFromTaskCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
+	projectMaterialFissionFromTaskCmd.Flags().String("name", "", "素材名称（必填）")
+
+	// projectMaterialDerivativeFromTaskCmd 参数
+	projectMaterialDerivativeFromTaskCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialDerivativeFromTaskCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
+	projectMaterialDerivativeFromTaskCmd.Flags().String("name", "", "素材名称（必填）")
+
+	// projectMaterialFissionFromMaterialCmd 参数
+	projectMaterialFissionFromMaterialCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialFissionFromMaterialCmd.Flags().Int64("material-id", 0, "素材 ID（必填）")
+	projectMaterialFissionFromMaterialCmd.Flags().String("name", "", "素材名称（必填）")
+
+	// projectMaterialDerivativeFromMaterialCmd 参数
+	projectMaterialDerivativeFromMaterialCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialDerivativeFromMaterialCmd.Flags().Int64("material-id", 0, "素材 ID（必填）")
+	projectMaterialDerivativeFromMaterialCmd.Flags().String("name", "", "素材名称（必填）")
 }

@@ -549,3 +549,309 @@ func parseTags(value gjson.Result) []Tag {
 	})
 	return tags
 }
+
+// CreateScriptTaskRequest 创建脚本任务请求
+type CreateScriptTaskRequest struct {
+	ProjectId    int64  // 必填
+	Name         string // 必填
+	ParentId     int64  // 可选，父任务ID
+	SourceObject string // 可选，来源对象
+}
+
+// CreateScriptTaskResult 创建脚本任务结果
+type CreateScriptTaskResult struct {
+	ScriptId int64  `json:"scriptId"`
+	Name     string `json:"name"`
+}
+
+// CreateScriptTask 创建脚本任务
+func (c *ProjectClient) CreateScriptTask(ctx context.Context, req *CreateScriptTaskRequest) (*CreateScriptTaskResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+		"name":      req.Name,
+	}
+	if req.ParentId > 0 {
+		body["parentId"] = req.ParentId
+	}
+	if req.SourceObject != "" {
+		body["sourceObject"] = req.SourceObject
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/script/create")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("SCRIPT_CREATE_ERROR",
+			fmt.Sprintf("创建脚本任务失败 (%d)", codeVal), message)
+	}
+
+	return &CreateScriptTaskResult{
+		ScriptId: result.Get("data.scriptId").Int(),
+		Name:     result.Get("data.name").String(),
+	}, nil
+}
+
+// CreateFissionMaterialFromTaskRequest 从任务创建裂变素材请求
+type CreateFissionMaterialFromTaskRequest struct {
+	ProjectId int64  // 必填
+	ScriptId  int64  // 必填
+	Name      string // 必填
+}
+
+// CreateFissionMaterialFromTaskResult 从任务创建裂变素材结果
+type CreateFissionMaterialFromTaskResult struct {
+	MaterialId int64  `json:"materialId"`
+	Name       string `json:"name"`
+}
+
+// CreateFissionMaterialFromTask 从任务创建裂变素材（父子关系）
+func (c *ProjectClient) CreateFissionMaterialFromTask(ctx context.Context, req *CreateFissionMaterialFromTaskRequest) (*CreateFissionMaterialFromTaskResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+		"scriptId":  req.ScriptId,
+		"name":      req.Name,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/fission-from-task")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FISSION_MATERIAL_FROM_TASK_ERROR",
+			fmt.Sprintf("从任务创建裂变素材失败 (%d)", codeVal), message)
+	}
+
+	return &CreateFissionMaterialFromTaskResult{
+		MaterialId: result.Get("data.materialId").Int(),
+		Name:       result.Get("data.name").String(),
+	}, nil
+}
+
+// CreateDerivativeMaterialFromTaskRequest 从任务创建衍生素材请求
+type CreateDerivativeMaterialFromTaskRequest struct {
+	ProjectId int64  // 必填
+	ScriptId  int64  // 必填
+	Name      string // 必填
+}
+
+// CreateDerivativeMaterialFromTaskResult 从任务创建衍生素材结果
+type CreateDerivativeMaterialFromTaskResult struct {
+	MaterialId int64  `json:"materialId"`
+	Name       string `json:"name"`
+}
+
+// CreateDerivativeMaterialFromTask 从任务创建衍生素材（同级关系）
+func (c *ProjectClient) CreateDerivativeMaterialFromTask(ctx context.Context, req *CreateDerivativeMaterialFromTaskRequest) (*CreateDerivativeMaterialFromTaskResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+		"scriptId":  req.ScriptId,
+		"name":      req.Name,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/derivative-from-task")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("DERIVATIVE_MATERIAL_FROM_TASK_ERROR",
+			fmt.Sprintf("从任务创建衍生素材失败 (%d)", codeVal), message)
+	}
+
+	return &CreateDerivativeMaterialFromTaskResult{
+		MaterialId: result.Get("data.materialId").Int(),
+		Name:       result.Get("data.name").String(),
+	}, nil
+}
+
+// CreateFissionMaterialFromMaterialRequest 从素材创建裂变素材请求
+type CreateFissionMaterialFromMaterialRequest struct {
+	ProjectId  int64  // 必填
+	MaterialId int64  // 必填
+	Name       string // 必填
+}
+
+// CreateFissionMaterialFromMaterialResult 从素材创建裂变素材结果
+type CreateFissionMaterialFromMaterialResult struct {
+	MaterialId int64  `json:"materialId"`
+	Name       string `json:"name"`
+}
+
+// CreateFissionMaterialFromMaterial 从素材创建裂变素材（父子关系）
+func (c *ProjectClient) CreateFissionMaterialFromMaterial(ctx context.Context, req *CreateFissionMaterialFromMaterialRequest) (*CreateFissionMaterialFromMaterialResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId":  req.ProjectId,
+		"materialId": req.MaterialId,
+		"name":       req.Name,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/fission-from-material")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FISSION_MATERIAL_FROM_MATERIAL_ERROR",
+			fmt.Sprintf("从素材创建裂变素材失败 (%d)", codeVal), message)
+	}
+
+	return &CreateFissionMaterialFromMaterialResult{
+		MaterialId: result.Get("data.materialId").Int(),
+		Name:       result.Get("data.name").String(),
+	}, nil
+}
+
+// CreateDerivativeMaterialFromMaterialRequest 从素材创建衍生素材请求
+type CreateDerivativeMaterialFromMaterialRequest struct {
+	ProjectId  int64  // 必填
+	MaterialId int64  // 必填
+	Name       string // 必填
+}
+
+// CreateDerivativeMaterialFromMaterialResult 从素材创建衍生素材结果
+type CreateDerivativeMaterialFromMaterialResult struct {
+	MaterialId int64  `json:"materialId"`
+	Name       string `json:"name"`
+}
+
+// CreateDerivativeMaterialFromMaterial 从素材创建衍生素材（同级关系）
+func (c *ProjectClient) CreateDerivativeMaterialFromMaterial(ctx context.Context, req *CreateDerivativeMaterialFromMaterialRequest) (*CreateDerivativeMaterialFromMaterialResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId":  req.ProjectId,
+		"materialId": req.MaterialId,
+		"name":       req.Name,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/derivative-from-material")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	// 处理 500 错误
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("DERIVATIVE_MATERIAL_FROM_MATERIAL_ERROR",
+			fmt.Sprintf("从素材创建衍生素材失败 (%d)", codeVal), message)
+	}
+
+	return &CreateDerivativeMaterialFromMaterialResult{
+		MaterialId: result.Get("data.materialId").Int(),
+		Name:       result.Get("data.name").String(),
+	}, nil
+}
