@@ -42,7 +42,7 @@ sudo make install
 npx skills add CreatiBI/cli -y -g
 ```
 
-安装成功后，Claude Code 将自动识别以下触发词：
+安装成功后，OpenClaw、harmas Agent 等 将自动识别以下触发词：
 - `cbi`、`素材库`、`上传素材`、`上传到素材库`
 - `cbi 上传`、`cbi repository`
 - `repository file-create`、`file-list`、`file-detail`
