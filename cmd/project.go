@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -319,12 +320,13 @@ func scriptStateName(state int) string {
 var projectMaterialListCmd = &cobra.Command{
 	Use:   "material-list",
 	Short: "列出专案素材",
-	Long: `获取专案的素材列表。
+	Long: `获取专案的素材列表，支持多条件筛选。
 
 示例：
   cbi project material-list --project-id 1
   cbi project material-list --project-id 1 --keyword "视频"
-  cbi project material-list --project-id 1 --page 2 --pageSize 30`,
+  cbi project material-list --project-id 1 --file-type 1 --delivered 1
+  cbi project material-list --project-id 1 --creator-id 3 --page 2 --pageSize 30`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectId, _ := cmd.Flags().GetInt64("project-id")
@@ -333,6 +335,11 @@ var projectMaterialListCmd = &cobra.Command{
 		}
 
 		keyword, _ := cmd.Flags().GetString("keyword")
+		fileType, _ := cmd.Flags().GetInt("file-type")
+		creatorId, _ := cmd.Flags().GetInt64("creator-id")
+		writerId, _ := cmd.Flags().GetInt64("writer-id")
+		designerId, _ := cmd.Flags().GetInt64("designer-id")
+		delivered, _ := cmd.Flags().GetInt("delivered")
 		page, _ := cmd.Flags().GetInt("page")
 		pageSize, _ := cmd.Flags().GetInt("pageSize")
 
@@ -341,10 +348,15 @@ var projectMaterialListCmd = &cobra.Command{
 
 		projectClient := client.NewProjectClient()
 		result, err := projectClient.ListMaterials(ctx, &client.MaterialListRequest{
-			ProjectId: projectId,
-			Page:      page,
-			PageSize:  pageSize,
-			Keyword:   keyword,
+			ProjectId:          projectId,
+			Page:               page,
+			PageSize:           pageSize,
+			Keyword:            keyword,
+			FileType:           fileType,
+			CreatorId:          creatorId,
+			AssignedWriterId:   writerId,
+			AssignedDesignerId: designerId,
+			IsDelivered:        delivered,
 		})
 		if err != nil {
 			return err
@@ -377,12 +389,20 @@ func printMaterialListTable(cmd *cobra.Command, result *client.MaterialListResul
 	}
 
 	t := output.NewTableWriter(w)
-	t.AppendHeader("ID", "名称", "类型", "格式", "时长", "创建者")
+	t.AppendHeader("ID", "名称", "类型", "格式", "时长", "编剧", "投放", "创建者")
 
 	for _, m := range result.Materials {
 		creator := "-"
 		if m.Creator != nil {
 			creator = m.Creator.Name
+		}
+		writer := "-"
+		if m.AssignedWriter != nil {
+			writer = m.AssignedWriter.Name
+		}
+		delivered := "未投放"
+		if m.IsDelivered {
+			delivered = "已投放"
 		}
 		t.AppendRow(
 			strconv.FormatInt(m.ID, 10),
@@ -390,6 +410,8 @@ func printMaterialListTable(cmd *cobra.Command, result *client.MaterialListResul
 			fileTypeName(m.FileType),
 			m.Format,
 			m.Duration,
+			writer,
+			delivered,
 			creator,
 		)
 	}
@@ -406,6 +428,274 @@ func fileTypeName(fileType int) string {
 		return "图片"
 	default:
 		return fmt.Sprintf("未知(%d)", fileType)
+	}
+}
+
+// projectMaterialDerivativeListCmd 获取衍生素材列表
+var projectMaterialDerivativeListCmd = &cobra.Command{
+	Use:   "derivative-list",
+	Short: "列出衍生素材树",
+	Long: `获取专案的衍生素材树形结构。
+
+示例：
+  cbi project material derivative-list --project-id 1
+  cbi project material derivative-list --project-id 1 --material-id 10`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		materialId, _ := cmd.Flags().GetInt64("material-id")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.ListDerivativeMaterials(ctx, &client.ListDerivativeMaterialsRequest{
+			ProjectId:  projectId,
+			MaterialId: materialId,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printDeriveNodes(cmd, result.Nodes, "衍生素材")
+			return nil
+		}
+	},
+}
+
+// projectMaterialFissionListCmd 获取裂变素材列表
+var projectMaterialFissionListCmd = &cobra.Command{
+	Use:   "fission-list",
+	Short: "列出裂变素材树",
+	Long: `获取专案的裂变素材树形结构。
+
+示例：
+  cbi project material fission-list --project-id 1
+  cbi project material fission-list --project-id 1 --material-id 10`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		materialId, _ := cmd.Flags().GetInt64("material-id")
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.ListFissionMaterials(ctx, &client.ListFissionMaterialsRequest{
+			ProjectId:  projectId,
+			MaterialId: materialId,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printDeriveNodes(cmd, result.Nodes, "裂变素材")
+			return nil
+		}
+	},
+}
+
+// printDeriveNodes 输出衍生/裂变节点树
+func printDeriveNodes(cmd *cobra.Command, nodes []client.DeriveNode, title string) {
+	w := cmd.OutOrStdout()
+
+	if len(nodes) == 0 {
+		fmt.Fprintf(w, "无%s\n", title)
+		return
+	}
+
+	fmt.Fprintf(w, "%s树形结构:\n\n", title)
+	for _, node := range nodes {
+		printDeriveNodeTree(w, node, 0)
+	}
+}
+
+// printDeriveNodeTree 递归输出节点树
+func printDeriveNodeTree(w io.Writer, node client.DeriveNode, level int) {
+	indent := strings.Repeat("  ", level)
+	fileType := fileTypeName(node.FileType)
+	fmt.Fprintf(w, "%s- [%d] %s (%s, 层级%d)\n", indent, node.MaterialId, node.Name, fileType, node.DeriveLevel)
+	for _, child := range node.Children {
+		printDeriveNodeTree(w, child, level+1)
+	}
+}
+
+// projectMaterialTagsCmd 获取素材标签列表
+var projectMaterialTagsCmd = &cobra.Command{
+	Use:   "tags",
+	Short: "列出素材标签",
+	Long: `获取专案素材的标签列表。
+
+示例：
+  cbi project material tags --project-id 1
+  cbi project material tags --project-id 1 --material-ids 1,2,3`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		materialIdsStr, _ := cmd.Flags().GetString("material-ids")
+		var materialIds []int64
+		if materialIdsStr != "" {
+			materialIds = parseIDListToInt64(materialIdsStr)
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.ListMaterialTags(ctx, &client.ListMaterialTagsRequest{
+			ProjectId:   projectId,
+			MaterialIds: materialIds,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printMaterialTagsTable(cmd, result)
+			return nil
+		}
+	},
+}
+
+// printMaterialTagsTable 表格输出素材标签
+func printMaterialTagsTable(cmd *cobra.Command, result *client.ListMaterialTagsResult) {
+	w := cmd.OutOrStdout()
+
+	if len(result.MaterialTags) == 0 {
+		fmt.Fprintln(w, "无素材标签")
+		return
+	}
+
+	t := output.NewTableWriter(w)
+	t.AppendHeader("素材ID", "标签")
+
+	for _, item := range result.MaterialTags {
+		tagNames := []string{}
+		for _, tag := range item.Tags {
+			tagNames = append(tagNames, tag.Name)
+		}
+		t.AppendRow(
+			strconv.FormatInt(item.MaterialId, 10),
+			strings.Join(tagNames, ", "),
+		)
+	}
+
+	t.Render()
+}
+
+// projectMaterialScriptStructureCmd 获取素材脚本结构
+var projectMaterialScriptStructureCmd = &cobra.Command{
+	Use:   "script-structure",
+	Short: "获取素材脚本结构",
+	Long: `获取素材的脚本结构分析结果。
+
+示例：
+  cbi project material script-structure --project-id 1 --material-id 10`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectId, _ := cmd.Flags().GetInt64("project-id")
+		materialId, _ := cmd.Flags().GetInt64("material-id")
+
+		if projectId == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+		if materialId == 0 {
+			return cliErr.NewCLIError("MISSING_MATERIAL_ID", "必须指定 --material-id")
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.GetMaterialScriptStructure(ctx, &client.GetMaterialScriptStructureRequest{
+			ProjectId:  projectId,
+			MaterialId: materialId,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printMaterialScriptStructure(cmd, result)
+			return nil
+		}
+	},
+}
+
+// printMaterialScriptStructure 输出素材脚本结构
+func printMaterialScriptStructure(cmd *cobra.Command, result *client.GetMaterialScriptStructureResult) {
+	w := cmd.OutOrStdout()
+
+	fmt.Fprintf(w, "脚本结构分析:\n")
+	fmt.Fprintf(w, "  分析状态: %s\n", structureStatusName(result.StructureAnalysisStatus))
+	if result.StructureContent != "" {
+		fmt.Fprintf(w, "  结构内容:\n%s\n", result.StructureContent)
+	}
+}
+
+// structureStatusName 获取结构分析状态名称
+func structureStatusName(status int) string {
+	switch status {
+	case 0:
+		return "未分析"
+	case 1:
+		return "准备"
+	case 2:
+		return "分析中"
+	case 3:
+		return "分析失败"
+	case 4:
+		return "分析成功"
+	case 5:
+		return "生成中"
+	case 6:
+		return "生成失败"
+	case 7:
+		return "生成成功"
+	default:
+		return fmt.Sprintf("未知(%d)", status)
 	}
 }
 
@@ -1101,6 +1391,10 @@ func init() {
 	projectMaterialCmd.AddCommand(projectMaterialDerivativeFromTaskCmd)
 	projectMaterialCmd.AddCommand(projectMaterialFissionFromMaterialCmd)
 	projectMaterialCmd.AddCommand(projectMaterialDerivativeFromMaterialCmd)
+	projectMaterialCmd.AddCommand(projectMaterialDerivativeListCmd)
+	projectMaterialCmd.AddCommand(projectMaterialFissionListCmd)
+	projectMaterialCmd.AddCommand(projectMaterialTagsCmd)
+	projectMaterialCmd.AddCommand(projectMaterialScriptStructureCmd)
 
 	// projectListCmd 参数
 	projectListCmd.Flags().String("keyword", "", "搜索关键词")
@@ -1130,6 +1424,11 @@ func init() {
 	// projectMaterialListCmd 参数
 	projectMaterialListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
 	projectMaterialListCmd.Flags().String("keyword", "", "搜索关键词")
+	projectMaterialListCmd.Flags().Int("file-type", 0, "素材类型筛选（0=不筛选, 1=视频, 2=图片）")
+	projectMaterialListCmd.Flags().Int64("creator-id", 0, "创建者筛选")
+	projectMaterialListCmd.Flags().Int64("writer-id", 0, "脚本撰写者筛选")
+	projectMaterialListCmd.Flags().Int64("designer-id", 0, "素材制作者筛选")
+	projectMaterialListCmd.Flags().Int("delivered", 0, "投放状态筛选（0=不筛选, 1=已投放, 2=未投放）")
 	projectMaterialListCmd.Flags().Int("page", 1, "页码")
 	projectMaterialListCmd.Flags().Int("pageSize", 20, "每页条数（最大 50）")
 
@@ -1175,4 +1474,20 @@ func init() {
 	projectMaterialDerivativeFromMaterialCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
 	projectMaterialDerivativeFromMaterialCmd.Flags().Int64("material-id", 0, "素材 ID（必填）")
 	projectMaterialDerivativeFromMaterialCmd.Flags().String("name", "", "素材名称（必填）")
+
+	// projectMaterialDerivativeListCmd 参数
+	projectMaterialDerivativeListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialDerivativeListCmd.Flags().Int64("material-id", 0, "素材 ID（可选，传 0 返回所有衍生根节点）")
+
+	// projectMaterialFissionListCmd 参数
+	projectMaterialFissionListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialFissionListCmd.Flags().Int64("material-id", 0, "素材 ID（可选，传 0 返回所有裂变根节点）")
+
+	// projectMaterialTagsCmd 参数
+	projectMaterialTagsCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialTagsCmd.Flags().String("material-ids", "", "素材 ID 列表（逗号分隔，可选）")
+
+	// projectMaterialScriptStructureCmd 参数
+	projectMaterialScriptStructureCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectMaterialScriptStructureCmd.Flags().Int64("material-id", 0, "素材 ID（必填）")
 }

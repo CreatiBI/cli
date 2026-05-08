@@ -134,17 +134,24 @@ type Material struct {
 	ScriptId     int64             `json:"scriptId"`
 	Creator      *CreatorInfo      `json:"creator,omitempty"`
 	Producer     *CreatorInfo      `json:"producer,omitempty"`
+	AssignedWriter *CreatorInfo    `json:"assignedWriter,omitempty"` // 脚本撰写者
 	Tags         []Tag             `json:"tags"`
 	CreatedAt    string            `json:"createdAt"`
+	IsDelivered  bool              `json:"isDelivered"`              // 是否已投放
 	CustomFields map[string]string `json:"customFields"` // 自定义字段值，key=fieldName，value=JSON字符串
 }
 
 // MaterialListRequest 素材列表请求
 type MaterialListRequest struct {
-	ProjectId int64
-	Page      int
-	PageSize  int
-	Keyword   string
+	ProjectId          int64
+	Page               int
+	PageSize           int
+	Keyword            string
+	FileType           int   // 0=不筛选, 1=视频, 2=图片
+	CreatorId          int64 // 创建者筛选
+	AssignedWriterId   int64 // 脚本撰写者筛选
+	AssignedDesignerId int64 // 素材制作者筛选
+	IsDelivered        int   // 0=不筛选, 1=已投放, 2=未投放
 }
 
 // MaterialListResult 素材列表结果
@@ -443,6 +450,21 @@ func (c *ProjectClient) ListMaterials(ctx context.Context, req *MaterialListRequ
 	if req.Keyword != "" {
 		body["keyword"] = req.Keyword
 	}
+	if req.FileType > 0 {
+		body["fileType"] = req.FileType
+	}
+	if req.CreatorId > 0 {
+		body["creatorId"] = req.CreatorId
+	}
+	if req.AssignedWriterId > 0 {
+		body["assignedWriterId"] = req.AssignedWriterId
+	}
+	if req.AssignedDesignerId > 0 {
+		body["assignedDesignerId"] = req.AssignedDesignerId
+	}
+	if req.IsDelivered > 0 {
+		body["isDelivered"] = req.IsDelivered
+	}
 
 	resp, err := c.client.R().
 		SetContext(ctx).
@@ -499,6 +521,12 @@ func (c *ProjectClient) ListMaterials(ctx context.Context, req *MaterialListRequ
 		if producer := value.Get("producer"); producer.Exists() {
 			material.Producer = parseCreatorInfo(producer)
 		}
+		// 解析 assignedWriter
+		if assignedWriter := value.Get("assignedWriter"); assignedWriter.Exists() {
+			material.AssignedWriter = parseCreatorInfo(assignedWriter)
+		}
+		// 解析 isDelivered
+		material.IsDelivered = value.Get("isDelivered").Bool()
 		// 解析 tags
 		if tags := value.Get("tags"); tags.Exists() {
 			material.Tags = parseTags(tags)
@@ -1055,4 +1083,287 @@ func parseInt32Array(value gjson.Result) []int32 {
 		return true
 	})
 	return result
+}
+
+// DeriveNode 衍生/裂变节点
+type DeriveNode struct {
+	MaterialId       int64        `json:"materialId"`
+	OriginMaterialId int64        `json:"originMaterialId"`
+	ParentMaterialId int64        `json:"parentMaterialId"`
+	DeriveLevel      int          `json:"deriveLevel"`
+	Name             string       `json:"name"`
+	FileType         int          `json:"fileType"`
+	Cover            string       `json:"cover"`
+	CreatedAt        string       `json:"createdAt"`
+	GenerateStatus   int          `json:"generateStatus"`
+	RelationContent  string       `json:"relationContent"`
+	Children         []DeriveNode `json:"children"`
+}
+
+// ListDerivativeMaterialsRequest 获取衍生素材列表请求
+type ListDerivativeMaterialsRequest struct {
+	ProjectId  int64
+	MaterialId int64 // 可选，传 0 返回所有衍生根节点
+}
+
+// ListDerivativeMaterialsResult 获取衍生素材列表结果
+type ListDerivativeMaterialsResult struct {
+	Nodes []DeriveNode `json:"nodes"`
+}
+
+// ListDerivativeMaterials 获取衍生素材列表
+func (c *ProjectClient) ListDerivativeMaterials(ctx context.Context, req *ListDerivativeMaterialsRequest) (*ListDerivativeMaterialsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+	}
+	if req.MaterialId > 0 {
+		body["materialId"] = req.MaterialId
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/derivative/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("DERIVATIVE_MATERIAL_LIST_ERROR",
+			fmt.Sprintf("获取衍生素材列表失败 (%d)", codeVal), message)
+	}
+
+	nodes := parseDeriveNodes(result.Get("data.nodes"))
+	return &ListDerivativeMaterialsResult{Nodes: nodes}, nil
+}
+
+// ListFissionMaterialsRequest 获取裂变素材列表请求
+type ListFissionMaterialsRequest struct {
+	ProjectId  int64
+	MaterialId int64 // 可选，传 0 返回所有裂变根节点
+}
+
+// ListFissionMaterialsResult 获取裂变素材列表结果
+type ListFissionMaterialsResult struct {
+	Nodes []DeriveNode `json:"nodes"`
+}
+
+// ListFissionMaterials 获取裂变素材列表
+func (c *ProjectClient) ListFissionMaterials(ctx context.Context, req *ListFissionMaterialsRequest) (*ListFissionMaterialsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+	}
+	if req.MaterialId > 0 {
+		body["materialId"] = req.MaterialId
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/fission/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("FISSION_MATERIAL_LIST_ERROR",
+			fmt.Sprintf("获取裂变素材列表失败 (%d)", codeVal), message)
+	}
+
+	nodes := parseDeriveNodes(result.Get("data.nodes"))
+	return &ListFissionMaterialsResult{Nodes: nodes}, nil
+}
+
+// parseDeriveNodes 解析衍生/裂变节点树
+func parseDeriveNodes(value gjson.Result) []DeriveNode {
+	if !value.Exists() {
+		return nil
+	}
+	nodes := []DeriveNode{}
+	value.ForEach(func(_, v gjson.Result) bool {
+		node := DeriveNode{
+			MaterialId:       v.Get("materialId").Int(),
+			OriginMaterialId: v.Get("originMaterialId").Int(),
+			ParentMaterialId: v.Get("parentMaterialId").Int(),
+			DeriveLevel:      int(v.Get("deriveLevel").Int()),
+			Name:             v.Get("name").String(),
+			FileType:         int(v.Get("fileType").Int()),
+			Cover:            v.Get("cover").String(),
+			CreatedAt:        v.Get("createdAt").String(),
+			GenerateStatus:   int(v.Get("generateStatus").Int()),
+			RelationContent:  v.Get("relationContent").String(),
+		}
+		// 递归解析 children
+		node.Children = parseDeriveNodes(v.Get("children"))
+		nodes = append(nodes, node)
+		return true
+	})
+	return nodes
+}
+
+// MaterialTagItem 素材标签项
+type MaterialTagItem struct {
+	MaterialId int64 `json:"materialId"`
+	Tags       []Tag `json:"tags"`
+}
+
+// ListMaterialTagsRequest 获取素材标签列表请求
+type ListMaterialTagsRequest struct {
+	ProjectId   int64
+	MaterialIds []int64 // 可选，为空返回所有有标签的素材
+}
+
+// ListMaterialTagsResult 获取素材标签列表结果
+type ListMaterialTagsResult struct {
+	MaterialTags []MaterialTagItem `json:"materialTags"`
+}
+
+// ListMaterialTags 获取素材标签列表
+func (c *ProjectClient) ListMaterialTags(ctx context.Context, req *ListMaterialTagsRequest) (*ListMaterialTagsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+	}
+	if len(req.MaterialIds) > 0 {
+		body["materialIds"] = req.MaterialIds
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/tags/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("MATERIAL_TAGS_LIST_ERROR",
+			fmt.Sprintf("获取素材标签列表失败 (%d)", codeVal), message)
+	}
+
+	materialTags := []MaterialTagItem{}
+	result.Get("data.materialTags").ForEach(func(_, v gjson.Result) bool {
+		item := MaterialTagItem{
+			MaterialId: v.Get("materialId").Int(),
+			Tags:       parseTags(v.Get("tags")),
+		}
+		materialTags = append(materialTags, item)
+		return true
+	})
+
+	return &ListMaterialTagsResult{MaterialTags: materialTags}, nil
+}
+
+// GetMaterialScriptStructureRequest 获取素材脚本结构请求
+type GetMaterialScriptStructureRequest struct {
+	ProjectId  int64
+	MaterialId int64
+}
+
+// GetMaterialScriptStructureResult 获取素材脚本结构结果
+type GetMaterialScriptStructureResult struct {
+	StructureAnalysisStatus int    `json:"structureAnalysisStatus"`
+	StructureContent        string `json:"structureContent"`
+}
+
+// GetMaterialScriptStructure 获取素材脚本结构
+func (c *ProjectClient) GetMaterialScriptStructure(ctx context.Context, req *GetMaterialScriptStructureRequest) (*GetMaterialScriptStructureResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId":  req.ProjectId,
+		"materialId": req.MaterialId,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/material/script-structure/get")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("MATERIAL_SCRIPT_STRUCTURE_GET_ERROR",
+			fmt.Sprintf("获取素材脚本结构失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &GetMaterialScriptStructureResult{
+		StructureAnalysisStatus: int(data.Get("structureAnalysisStatus").Int()),
+		StructureContent:        data.Get("structureContent").String(),
+	}, nil
 }
