@@ -1367,3 +1367,209 @@ func (c *ProjectClient) GetMaterialScriptStructure(ctx context.Context, req *Get
 		StructureContent:        data.Get("structureContent").String(),
 	}, nil
 }
+
+// ExistingFile 已存在文件
+type ExistingFile struct {
+	Hash     string `json:"hash"`
+	FilePath string `json:"filePath"`
+}
+
+// GetUploadTokenRequest 获取上传签名请求
+type GetUploadTokenRequest struct {
+	FileHashes []string // 文件 MD5 列表（可选）
+}
+
+// GetUploadTokenResult 获取上传签名结果
+type GetUploadTokenResult struct {
+	UploadToken   string         `json:"uploadToken"`   // STS 临时凭证（JSON 字符串）
+	OSSPath       string         `json:"ossPath"`       // OSS 目录路径前缀
+	Region        string         `json:"region"`        // 区域：cn 或 en
+	Storage       int            `json:"storage"`       // 存储类型：1=火山引擎, 2=阿里云
+	ExistingFiles []ExistingFile `json:"existingFiles"` // 已存在文件列表
+}
+
+// GetUploadToken 获取 OSS 上传签名
+func (c *ProjectClient) GetUploadToken(ctx context.Context, req *GetUploadTokenRequest) (*GetUploadTokenResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{}
+	if len(req.FileHashes) > 0 {
+		body["fileHashes"] = req.FileHashes
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/upload/token")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("UPLOAD_TOKEN_ERROR",
+			fmt.Sprintf("获取上传签名失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+
+	// 解析 existingFiles
+	existingFiles := []ExistingFile{}
+	data.Get("existingFiles").ForEach(func(_, v gjson.Result) bool {
+		existingFiles = append(existingFiles, ExistingFile{
+			Hash:     v.Get("hash").String(),
+			FilePath: v.Get("filePath").String(),
+		})
+		return true
+	})
+
+	return &GetUploadTokenResult{
+		UploadToken:   data.Get("uploadToken").String(),
+		OSSPath:       data.Get("ossPath").String(),
+		Region:        data.Get("region").String(),
+		Storage:       int(data.Get("storage").Int()),
+		ExistingFiles: existingFiles,
+	}, nil
+}
+
+// AddScriptDeliverableRequest 添加脚本交付物请求
+type AddScriptDeliverableRequest struct {
+	ScriptId  int64    // 脚本任务 ID（必填）
+	ProjectId int64    // 专案 ID（可选）
+	FilePaths []string // OSS 文件路径列表（1-50 个）
+}
+
+// AddScriptDeliverableResult 添加脚本交付物结果
+type AddScriptDeliverableResult struct {
+	ScriptId     int64  `json:"scriptId"`
+	AddedCount   int    `json:"addedCount"`
+	Deliverables string `json:"deliverables"` // JSON 字符串
+}
+
+// AddScriptDeliverable 添加脚本交付物
+func (c *ProjectClient) AddScriptDeliverable(ctx context.Context, req *AddScriptDeliverableRequest) (*AddScriptDeliverableResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"scriptId":  req.ScriptId,
+		"filePaths": req.FilePaths,
+	}
+	if req.ProjectId > 0 {
+		body["projectId"] = req.ProjectId
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/script/deliverable/add")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("ADD_DELIVERABLE_ERROR",
+			fmt.Sprintf("添加交付物失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &AddScriptDeliverableResult{
+		ScriptId:     data.Get("scriptId").Int(),
+		AddedCount:   int(data.Get("addedCount").Int()),
+		Deliverables: data.Get("deliverables").String(),
+	}, nil
+}
+
+// ListScriptDeliverablesRequest 获取脚本交付物列表请求
+type ListScriptDeliverablesRequest struct {
+	ScriptId  int64 // 脚本任务 ID（必填）
+	ProjectId int64 // 专案 ID（可选）
+}
+
+// ListScriptDeliverablesResult 获取脚本交付物列表结果
+type ListScriptDeliverablesResult struct {
+	TaskId       int64  `json:"taskId"`
+	Deliverables string `json:"deliverables"` // JSON 字符串
+	Attachments  string `json:"attachments"`  // JSON 字符串
+}
+
+// ListScriptDeliverables 获取脚本交付物列表
+func (c *ProjectClient) ListScriptDeliverables(ctx context.Context, req *ListScriptDeliverablesRequest) (*ListScriptDeliverablesResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"scriptId": req.ScriptId,
+	}
+	if req.ProjectId > 0 {
+		body["projectId"] = req.ProjectId
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/script/deliverable/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("LIST_DELIVERABLES_ERROR",
+			fmt.Sprintf("获取交付物列表失败 (%d)", codeVal), message)
+	}
+
+	data := result.Get("data")
+	return &ListScriptDeliverablesResult{
+		TaskId:       data.Get("taskId").Int(),
+		Deliverables: data.Get("deliverables").String(),
+		Attachments:  data.Get("attachments").String(),
+	}, nil
+}

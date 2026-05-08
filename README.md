@@ -115,6 +115,8 @@ cbi
 │   ├── script-create         # 创建脚本任务
 │   ├── script-get            # 获取脚本内容
 │   ├── script-save           # 保存脚本内容
+│   ├── deliverable-upload    # 上传交付物
+│   ├── deliverable-list      # 交付物列表
 │   ├── material-list         # 素材列表（支持多条件筛选）
 │   └── material              # 素材操作
 │       ├── derivative-list          # 衍生素材树
@@ -1299,6 +1301,72 @@ cbi project script-save --script-id 37110 --script '{"type":"doc","content":[...
 | 1 | 固定字段 |
 | 2 | 固有字段 |
 | 3 | 自定义字段 |
+
+### 上传交付物
+
+上传交付物（视频/图片）到脚本任务，支持 1-50 个文件上传。第一个文件作为主文件，后续为裂变文件（多尺寸变体）。上传前会自动进行 MD5 去重检查。
+
+```bash
+# 上传单个文件
+cbi project deliverable-upload --script-id 123 --file ./video.mp4
+
+# 上传多个文件（主文件 + 裂变文件）
+cbi project deliverable-upload --script-id 123 --file ./main.mp4 --file ./720p.mp4 --file ./480p.mp4
+
+# 指定专案 ID（用于权限验证）
+cbi project deliverable-upload --script-id 123 --project-id 1 --file ./video.mp4
+
+# JSON 格式输出
+cbi project deliverable-upload --script-id 123 --file ./video.mp4 --format json
+```
+
+参数：
+- `--script-id`: 脚本任务 ID（必填）
+- `--file`: 文件路径（必填，可多次指定，最多 50 个）
+- `--project-id`: 专案 ID（可选，用于权限验证）
+
+上传流程：
+1. 校验文件数量（1-50）和文件存在性
+2. 计算所有文件的 MD5 hash
+3. 获取 OSS 上传签名（传入 MD5 列表进行去重）
+4. 已存在文件：跳过上传，直接使用服务端返回的路径
+5. 新文件：上传到 OSS（火山引擎 TOS 或阿里云 OSS）
+6. 绑定交付物到脚本任务
+
+输出示例：
+```
+计算文件 MD5...
+获取上传签名...
+绑定交付物...
+✓ 交付物上传成功
+  脚本 ID: 123
+  添加数量: 3
+  跳过已存在: 1
+```
+
+### 获取交付物列表
+
+获取脚本任务的交付物和附件列表。
+
+```bash
+# 获取交付物列表
+cbi project deliverable-list --script-id 123
+
+# 指定专案 ID
+cbi project deliverable-list --script-id 123 --project-id 1
+
+# JSON 格式输出
+cbi project deliverable-list --script-id 123 --format json
+```
+
+参数：
+- `--script-id`: 脚本任务 ID（必填）
+- `--project-id`: 专案 ID（可选）
+
+输出信息包括：
+- 脚本 ID
+- 交付物列表：名称、类型（视频/图片）、文件 URL
+- 附件列表：名称、外部链接
 
 ---
 

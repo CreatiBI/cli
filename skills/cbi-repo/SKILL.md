@@ -90,6 +90,13 @@ trigger:
   - "cbi portfolio"
   - "portfolio list"
   - "portfolio project-list"
+  - "交付物"
+  - "上传交付物"
+  - "deliverable-upload"
+  - "deliverable-list"
+  - "脚本交付物"
+  - "上传到专案"
+  - "专案交付物"
 depends_on:
   - cbi-shared
 ---
@@ -140,6 +147,8 @@ depends_on:
 | 创建脚本任务 | 创建普通任务、子任务（裂变）或来源任务（衍生） |
 | 获取脚本内容 | 读取脚本任务内容与关联信息 |
 | 保存脚本内容 | 保存脚本 JSON/Markdown，并可更新关联信息 |
+| 上传交付物 | 上传视频/图片到脚本任务，支持多文件和去重 |
+| 交付物列表 | 查看脚本任务的交付物和附件列表 |
 | 脚本转裂变素材 | 从脚本创建同专案父子关系裂变素材 |
 | 脚本转衍生素材 | 从脚本创建可跨专案的平级衍生素材 |
 | 素材转裂变子素材 | 从素材创建同专案父子关系裂变子素材 |
@@ -182,7 +191,9 @@ depends_on:
 - `project material derivative-from-task`：可跨专案，素材 parentId=0，sourceObject 指向来源脚本。
 - `project material fission-from-material`：必须同专案，子素材 parentId 指向来源素材。
 - `project material derivative-from-material`：可跨专案，子素材 parentId=0，sourceObject 指向来源素材。
-- 当用户提到“我加入的专案”，将 `scope` 设为 `1`；未指定时默认全可见范围。
+- `project deliverable-upload`：上传交付物（视频/图片）到脚本任务，支持多文件（第一个为主文件，后续为裂变文件），自动 MD5 去重。
+- `project deliverable-list`：获取脚本任务的交付物和附件列表。
+- 当用户提到”我加入的专案”，将 `scope` 设为 `1`；未指定时默认全可见范围。
 
 ## 专案集规则
 
@@ -218,6 +229,8 @@ cbi project material fission-from-task --project-id <id> --script-id <id> --name
 cbi project material derivative-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material fission-from-material --project-id <id> --material-id <id> --name "<name>"
 cbi project material derivative-from-material --project-id <id> --material-id <id> --name "<name>"
+cbi project deliverable-upload --script-id <id> --file <path> [--file <path>...]
+cbi project deliverable-list --script-id <id>
 cbi portfolio list
 cbi portfolio project-list --portfolio-id <id>
 ```
