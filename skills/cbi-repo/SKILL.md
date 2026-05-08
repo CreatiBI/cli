@@ -58,10 +58,18 @@ trigger:
   - "project script-save"
   - "project script-create"
   - "project material-list"
+  - "project material derivative-list"
+  - "project material fission-list"
+  - "project material tags"
+  - "project material script-structure"
   - "project material fission-from-task"
   - "project material derivative-from-task"
   - "project material fission-from-material"
   - "project material derivative-from-material"
+  - "衍生树"
+  - "裂变树"
+  - "素材标签"
+  - "脚本结构"
   - "专案列表"
   - "创建专案"
   - "创建任务"
@@ -124,7 +132,11 @@ depends_on:
 | 专案列表 | 按关键词、可见范围、团队或作品集筛选 |
 | 创建专案 | 按团队创建公开或私有专案，并可设置日期范围 |
 | 专案脚本列表 | 按状态、关键词、父任务和归档状态筛选 |
-| 专案素材列表 | 按关键词检索专案下视频/图片素材 |
+| 专案素材列表 | 按关键词、类型、创建者、编剧、制作者、投放状态筛选 |
+| 衍生素材树 | 查看专案衍生素材的树形层级结构 |
+| 裂变素材树 | 查看专案裂变素材的树形层级结构 |
+| 素材标签查询 | 批量获取素材的标签信息 |
+| 素材脚本结构 | 获取素材的脚本结构分析结果 |
 | 创建脚本任务 | 创建普通任务、子任务（裂变）或来源任务（衍生） |
 | 获取脚本内容 | 读取脚本任务内容与关联信息 |
 | 保存脚本内容 | 保存脚本 JSON/Markdown，并可更新关联信息 |
@@ -155,7 +167,11 @@ depends_on:
 - `project list` 支持关键词、`scope`、`team-ids`、`portfolio-ids` 和分页。
 - `project create` 需要 `team-id` 与 `name`，可选 `privacy`、`description`、`template-id`、`deadline-start`、`deadline-end`。
 - `project script-list` 重点筛选字段：`state`、`parent-id`、`is-archived`。
-- `project material-list` 重点筛选字段：`keyword` 与分页；素材类型通常为 1=视频、2=图片。
+- `project material-list` 支持多条件筛选：`keyword`、`file-type`、`creator-id`、`writer-id`、`designer-id`、`delivered`。
+- `project material derivative-list`：获取衍生素材树，传 `material-id` 查指定素材的衍生树。
+- `project material fission-list`：获取裂变素材树，传 `material-id` 查指定素材的裂变树。
+- `project material tags`：批量获取素材标签，可指定 `material-ids` 筛选。
+- `project material script-structure`：获取素材的脚本结构分析，需要 `material-id`。
 - `project script-create` 支持 `parent-id`（裂变子任务）与 `source-object`（衍生任务来源）。
 - `project script-get` 用于读取脚本内容，支持可选 `project-id` 做权限验证。
 - `project script-save` 支持四种格式：`format=1`普通(Markdown)、`format=2`分镜(JSON)、`format=3`口播(JSON)、`format=4`剪辑(JSON)。
@@ -188,7 +204,11 @@ cbi repository highlight-clip-detail <clip-id>
 cbi project list
 cbi project create --team-id <id> --name "<name>"
 cbi project script-list --project-id <id>
-cbi project material-list --project-id <id>
+cbi project material-list --project-id <id> --file-type 1 --delivered 1
+cbi project material derivative-list --project-id <id>
+cbi project material fission-list --project-id <id>
+cbi project material tags --project-id <id>
+cbi project material script-structure --project-id <id> --material-id <id>
 cbi project script-create --project-id <id> --name "<name>"
 cbi project script-get --script-id <id>
 cbi project script-save --script-id <id> --script '<json>'
