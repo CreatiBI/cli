@@ -115,8 +115,12 @@ cbi
 │   ├── script-create         # 创建脚本任务
 │   ├── script-get            # 获取脚本内容
 │   ├── script-save           # 保存脚本内容
-│   ├── material-list         # 素材列表
+│   ├── material-list         # 素材列表（支持多条件筛选）
 │   └── material              # 素材操作
+│       ├── derivative-list          # 衍生素材树
+│       ├── fission-list             # 裂变素材树
+│       ├── tags                     # 素材标签查询
+│       ├── script-structure         # 素材脚本结构
 │       ├── fission-from-task        # 从脚本创建裂变素材
 │       ├── derivative-from-task     # 从脚本创建衍生素材
 │       ├── fission-from-material    # 从素材创建裂变子素材
@@ -884,6 +888,18 @@ cbi project material-list --project-id 1
 # 搜索关键词
 cbi project material-list --project-id 1 --keyword "视频"
 
+# 按素材类型筛选
+cbi project material-list --project-id 1 --file-type 1
+
+# 按创建者筛选
+cbi project material-list --project-id 1 --creator-id 3
+
+# 按脚本撰写者筛选
+cbi project material-list --project-id 1 --writer-id 5
+
+# 按投放状态筛选
+cbi project material-list --project-id 1 --delivered 1
+
 # 分页查询
 cbi project material-list --project-id 1 --page 2 --pageSize 30
 
@@ -894,12 +910,102 @@ cbi project material-list --project-id 1 --format json
 参数：
 - `--project-id`: 专案 ID（必填）
 - `--keyword`: 搜索关键词
+- `--file-type`: 素材类型筛选（0=不筛选, 1=视频, 2=图片）
+- `--creator-id`: 创建者筛选（account ID）
+- `--writer-id`: 脚本撰写者筛选（account ID）
+- `--designer-id`: 素材制作者筛选（account ID）
+- `--delivered`: 投放状态筛选（0=不筛选, 1=已投放, 2=未投放）
 - `--page`: 页码（默认 1）
 - `--pageSize`: 每页条数（默认 20，最大 50）
 
 素材类型：
 - 1 = 视频
 - 2 = 图片
+
+### 获取衍生素材树
+
+获取专案衍生素材的树形层级结构。
+
+```bash
+# 获取专案所有衍生素材根节点
+cbi project material derivative-list --project-id 1
+
+# 获取指定素材的衍生树
+cbi project material derivative-list --project-id 1 --material-id 10
+
+# JSON 格式输出
+cbi project material derivative-list --project-id 1 --format json
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--material-id`: 素材 ID（可选，传 0 或不传返回所有衍生根节点）
+
+输出树形结构：
+- 每个节点包含：素材 ID、名称、类型、层级、封面、生成状态
+- `deriveLevel`: 层级（1=根节点, 2=一级衍生, 3+=更深层）
+- `generateStatus`: 关系生成状态（0-7, 7=生成成功）
+- `children`: 子节点列表（递归）
+
+### 获取裂变素材树
+
+获取专案裂变素材的树形层级结构。
+
+```bash
+# 获取专案所有裂变素材根节点
+cbi project material fission-list --project-id 1
+
+# 获取指定素材的裂变树
+cbi project material fission-list --project-id 1 --material-id 10
+
+# JSON 格式输出
+cbi project material fission-list --project-id 1 --format json
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--material-id`: 素材 ID（可选，传 0 或不传返回所有裂变根节点）
+
+输出结构与衍生素材树一致。
+
+### 获取素材标签
+
+批量获取素材的标签信息。
+
+```bash
+# 获取专案所有有标签的素材
+cbi project material tags --project-id 1
+
+# 获取指定素材的标签
+cbi project material tags --project-id 1 --material-ids 1,2,3
+
+# JSON 格式输出
+cbi project material tags --project-id 1 --format json
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--material-ids`: 素材 ID 列表（逗号分隔，可选）
+
+### 获取素材脚本结构
+
+获取素材的脚本结构分析结果。
+
+```bash
+# 获取素材脚本结构
+cbi project material script-structure --project-id 1 --material-id 10
+
+# JSON 格式输出
+cbi project material script-structure --project-id 1 --material-id 10 --format json
+```
+
+参数：
+- `--project-id`: 专案 ID（必填）
+- `--material-id`: 素材 ID（必填）
+
+输出：
+- `structureAnalysisStatus`: 结构分析状态（0=未分析, 7=生成成功）
+- `structureContent`: 脚本结构内容（JSON）
 
 ### 创建脚本任务
 
@@ -1004,15 +1110,27 @@ cbi project script-get --script-id 37110 --format json
 
 ### 保存脚本内容
 
-保存脚本内容，支持自动生成模板。
+保存脚本内容，支持四种格式和自动生成模板。
 
-**推荐：使用 --text 自动生成模板**
+**格式说明：**
+- format=1: 普通脚本（Markdown）
+- format=2: 分镜脚本（JSON，含 Copy 字段）
+- format=3: 口播脚本（JSON，含 Content 字段）
+- format=4: 剪辑脚本（JSON，含 Start/Content/End 字段）
+
+**推荐：使用 --text 自动生成简化 JSON**
 
 ```bash
-# 自动生成 markdown 格式脚本（默认）
+# 自动生成 markdown 格式脚本（默认 format=1）
 cbi project script-save --script-id 37110 --text "脚本标题,第一段内容,第二段内容"
 
-# 自动生成剪辑格式脚本
+# 自动生成分镜格式脚本（format=2）
+cbi project script-save --script-id 37110 --text "第一镜文案,第二镜文案" --format 2
+
+# 自动生成口播格式脚本（format=3）
+cbi project script-save --script-id 37110 --text "口播正文内容" --format 3
+
+# 自动生成剪辑格式脚本（format=4）
 cbi project script-save --script-id 37110 --text "开场剪辑,产品演示,品牌收尾" --format 4
 
 # 更新脚本名称
@@ -1025,17 +1143,47 @@ cbi project script-save --script-id 37110 --product-ids 1,2 --app-ids 10 --ratio
 参数：
 - `--script-id`: 脚本任务 ID（必填）
 - `--project-id`: 专案 ID（可选）
-- `--format`: 脚本格式（可选，默认 markdown：1=普通 4=剪辑）
+- `--format`: 脚本格式（可选：1=普通 2=分镜 3=口播 4=剪辑，不传自动推导）
 - `--name`: 脚本名称（可选）
-- `--text`: 文本内容（自动生成模板，逗号分隔：标题,内容1,内容2...）
-- `--script`: 脚本内容 JSON（完整模板结构，高级用法）
+- `--text`: 文本内容（根据 format 自动生成简化 JSON 或 Markdown，逗号分隔）
+- `--script`: 脚本内容 JSON（简化或完整 doc JSON）
 - `--markdown`: Markdown 内容（普通格式）
 - `--product-ids`: 关联产品 ID（逗号分隔）
 - `--app-ids`: 关联渠道应用 ID（逗号分隔）
 - `--ratios`: 关联尺寸（逗号分隔）
 - `--ref-repo-file-ids`: 引用仓库文件 ID（逗号分隔）
 
-#### --text 自动生成模板
+#### --text 自动生成简化 JSON
+
+**分镜格式（format=2）：**
+
+传入逗号分隔的文案，自动生成简化 JSON 数组。
+
+```bash
+cbi project script-save --script-id 123 --text "第一镜文案,第二镜文案" --format 2
+```
+
+生成内容：`[{"Copy":"第一镜文案","duration":5},{"Copy":"第二镜文案","duration":5}]`
+
+**口播格式（format=3）：**
+
+传入正文和可选备注，自动生成简化 JSON 对象。
+
+```bash
+cbi project script-save --script-id 123 --text "口播正文内容,备注信息" --format 3
+```
+
+生成内容：`{"Content":"口播正文内容","Note":"备注信息"}`
+
+**剪辑格式（format=4）：**
+
+传入开场、主体、结尾三段，自动生成简化 JSON 对象。
+
+```bash
+cbi project script-save --script-id 123 --text "开场内容,主体内容,结尾内容" --format 4
+```
+
+生成内容：`{"Start":"开场内容","Content":"主体内容","End":"结尾内容","duration":30}`
 
 **Markdown 格式（默认）：**
 
@@ -1044,26 +1192,6 @@ cbi project script-save --script-id 37110 --product-ids 1,2 --app-ids 10 --ratio
 ```bash
 cbi project script-save --script-id 123 --text "主标题,副标题,段落内容1,段落内容2"
 ```
-
-生成结构：
-- heading (level=1): "主标题"
-- heading (level=2): "副标题"
-- paragraph: "段落内容1"
-- paragraph: "段落内容2"
-
-**剪辑格式（--format 4）：**
-
-每段文本生成一个剪辑段落（segment + CbiClipItemContent）。
-
-```bash
-cbi project script-save --script-id 123 --text "开场快节奏剪辑,产品功能演示,品牌Logo收尾" --format 4
-```
-
-生成结构：
-- heading: 标题
-- CbiClipItem:
-  - segments: [段落1, 段落2, 段落3]
-  - CbiClipItemContent: 每个包含对应文本
 
 #### 高级用法：完整 JSON 模板
 
