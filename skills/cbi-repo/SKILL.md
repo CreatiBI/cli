@@ -158,9 +158,10 @@ depends_on:
 - `project material-list` 重点筛选字段：`keyword` 与分页；素材类型通常为 1=视频、2=图片。
 - `project script-create` 支持 `parent-id`（裂变子任务）与 `source-object`（衍生任务来源）。
 - `project script-get` 用于读取脚本内容，支持可选 `project-id` 做权限验证。
-- `project script-save` 支持 `script`（JSON）与 `markdown` 两种内容写入方式。
+- `project script-save` 支持四种格式：`format=1`普通(Markdown)、`format=2`分镜(JSON)、`format=3`口播(JSON)、`format=4`剪辑(JSON)。
+- `project script-save` 支持简化 JSON 输入：分镜`[{"Copy":"文案"}]`、口播`{"Content":"正文"}`、剪辑`{"Start":"开场","Content":"主体","End":"结尾"}`。
+- `project script-save` 支持 `--text` 参数自动生成简化 JSON 或 Markdown（根据 `--format` 选择）。
 - `project script-save` 可同时更新 `name`、`product-ids`、`app-ids`、`ratios`、`ref-repo-file-ids`。
-- `project script-save` 在未显式传 `format` 时会按内容自动推导格式。
 - `project material fission-from-task`：必须同专案，素材 parentId 指向来源脚本。
 - `project material derivative-from-task`：可跨专案，素材 parentId=0，sourceObject 指向来源脚本。
 - `project material fission-from-material`：必须同专案，子素材 parentId 指向来源素材。
@@ -191,6 +192,8 @@ cbi project material-list --project-id <id>
 cbi project script-create --project-id <id> --name "<name>"
 cbi project script-get --script-id <id>
 cbi project script-save --script-id <id> --script '<json>'
+cbi project script-save --script-id <id> --text "内容1,内容2" --format 2
+cbi project script-save --script-id <id> --markdown "# 标题"
 cbi project material fission-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material derivative-from-task --project-id <id> --script-id <id> --name "<name>"
 cbi project material fission-from-material --project-id <id> --material-id <id> --name "<name>"
