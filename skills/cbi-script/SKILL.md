@@ -1,30 +1,36 @@
 ---
 name: cbi-script
-description: 使用 CreatiBI CLI（cbi）在专案内创建脚本任务、获取脚本内容、保存脚本内容，并在裂变/衍生场景下管理脚本上下游关系。用户提到“写脚本”“保存脚本内容”“获取脚本内容”“script-save”“script-get”“script-create”“脚本任务”等场景时使用。
+description: 使用 CreatiBI CLI（cbi）在专案内创建脚本任务、获取脚本内容、保存脚本内容、上传交付物，并在裂变/衍生场景下管理脚本上下游关系。用户提到”写脚本””保存脚本内容””获取脚本内容””上传交付物””script-save””script-get””script-create””deliverable-upload””脚本任务””交付物”等场景时使用。
 trigger:
-  - "写脚本"
-  - "创建脚本"
-  - "脚本任务"
-  - "创建脚本任务"
-  - "获取脚本内容"
-  - "保存脚本内容"
-  - "脚本编辑"
-  - "脚本保存"
-  - "script-create"
-  - "script-get"
-  - "script-save"
-  - "cbi script"
-  - "cbi project script"
-  - "专案脚本"
-  - "脚本衍生"
-  - "脚本裂变"
+  - “写脚本”
+  - “创建脚本”
+  - “脚本任务”
+  - “创建脚本任务”
+  - “获取脚本内容”
+  - “保存脚本内容”
+  - “脚本编辑”
+  - “脚本保存”
+  - “上传交付物”
+  - “上传视频”
+  - “上传到脚本”
+  - “交付物列表”
+  - “deliverable-upload”
+  - “deliverable-list”
+  - “script-create”
+  - “script-get”
+  - “script-save”
+  - “cbi script”
+  - “cbi project script”
+  - “专案脚本”
+  - “脚本衍生”
+  - “脚本裂变”
 depends_on:
   - cbi-shared
 ---
 
 # CreatiBI CLI 脚本写作与保存
 
-聚焦专案脚本读写能力：创建任务、读取脚本、保存脚本，并处理脚本在衍生/裂变链路中的关系。
+聚焦专案脚本读写能力：创建任务、读取脚本、保存脚本、上传交付物，并处理脚本在衍生/裂变链路中的关系。
 
 ## 交互规范
 
@@ -46,6 +52,8 @@ depends_on:
 | 创建脚本任务 | `script-create`，支持普通任务/子任务/衍生来源任务 |
 | 获取脚本内容 | `script-get`，读取基本信息、关联信息与内容 |
 | 保存脚本内容 | `script-save`，支持 JSON/Markdown，支持关联信息更新 |
+| 上传交付物 | `deliverable-upload`，上传视频/图片，支持多文件和 MD5 去重 |
+| 交付物列表 | `deliverable-list`，查看脚本任务的交付物和附件 |
 
 ## 关键规则
 
@@ -60,6 +68,14 @@ depends_on:
   - 内容参数二选一或组合更新：`script`（JSON）/`markdown`
   - 可选更新：`name`、`product-ids`、`app-ids`、`ratios`、`ref-repo-file-ids`
   - 格式约束：仅允许普通与剪辑格式（不再使用分镜/口播格式）
+- `deliverable-upload`：
+  - 必填：`script-id`、`--file`（文件路径，可多次指定）
+  - 文件数量限制：1-50 个
+  - 第一个文件为主文件，后续为裂变文件（多尺寸变体）
+  - 自动 MD5 去重：已存在文件跳过上传
+- `deliverable-list`：
+  - 必填：`script-id`
+  - 可选：`project-id`（权限验证）
 
 ## 格式规则
 
@@ -73,6 +89,8 @@ cbi project script-create --project-id <id> --name "<name>"
 cbi project script-get --script-id <id>
 cbi project script-save --script-id <id> --script '<json>'
 cbi project script-save --script-id <id> --markdown "# 标题"
+cbi project deliverable-upload --script-id <id> --file <path> [--file <path>...]
+cbi project deliverable-list --script-id <id>
 ```
 
 ## 参考
