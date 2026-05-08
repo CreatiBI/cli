@@ -68,7 +68,7 @@ cbi project material derivative-from-material --project-id <id> --material-id <i
 - 必填：`--script-id`
 - 可选：`--project-id`、`--format`、`--name`
 - 内容参数：
-  - `--script`：JSON 脚本内容（分镜/口播/剪辑）
+  - `--script`：JSON 脚本内容（普通/剪辑）
   - `--markdown`：Markdown 脚本内容（普通）
 - 关联更新参数：
   - `--product-ids`
@@ -78,17 +78,17 @@ cbi project material derivative-from-material --project-id <id> --material-id <i
 
 格式枚举：
 - `1`：普通
-- `2`：分镜
-- `3`：口播
 - `4`：剪辑
 
 自动推导规则（未显式传 `format` 时）：
 - 传 `script` JSON：
-  - 含 `CbiFrame` 节点 → `format=2`
-  - 含 `CbiSpeechItem`/`CbiSpeakItem` 节点 → `format=3`
   - 含 `CbiClipItem` 节点 → `format=4`
   - 其他 → `format=1`
 - 传 `markdown` → `format=1`
+
+约束：
+- 已取消分镜脚本与口播脚本，不新增 `format=2/3` 内容。
+- 允许读取历史 `format=2/3` 数据，但写入时仅使用 `format=1/4`。
 
 ### project material fission-from-task
 

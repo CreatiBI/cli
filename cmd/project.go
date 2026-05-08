@@ -566,14 +566,29 @@ var projectScriptSaveCmd = &cobra.Command{
 	Short: "保存脚本内容",
 	Long: `保存或修改脚本内容。
 
+支持四种脚本格式：
+  format=1: 普通脚本（Markdown）
+  format=2: 分镜脚本（JSON，含 Copy 字段）
+  format=3: 口播脚本（JSON，含 Content 字段）
+  format=4: 剪辑脚本（JSON，含 Start/Content/End 字段）
+
 示例：
-  # 使用 --text 自动生成 markdown 格式脚本（默认）
-  cbi project script-save --script-id 37110 --text "脚本标题,第一段内容,第二段内容"
+  # 使用 --text 自动生成脚本（默认 format=1 普通脚本）
+  cbi project script-save --script-id 37110 --text "标题,第一段内容,第二段内容"
 
-  # 使用 --text 生成剪辑格式脚本
-  cbi project script-save --script-id 37110 --text "开场剪辑,产品演示,品牌收尾" --format 4
+  # 使用 --text 生成分镜脚本（format=2）
+  cbi project script-save --script-id 37110 --text "第一镜文案,第二镜文案" --format 2
 
-  # 传入完整 JSON 模板（高级用法）
+  # 使用 --text 生成口播脚本（format=3）
+  cbi project script-save --script-id 37110 --text "口播正文内容" --format 3
+
+  # 使用 --text 生成剪辑脚本（format=4）
+  cbi project script-save --script-id 37110 --text "开场内容,主体内容,结尾内容" --format 4
+
+  # 传入简化 JSON（推荐）
+  cbi project script-save --script-id 37110 --script '[{"Copy":"第一镜文案","duration":5}]'
+
+  # 传入完整 doc JSON（高级用法）
   cbi project script-save --script-id 37110 --script '{"type":"doc","content":[...]}'
 
   # 保存普通 Markdown 脚本
@@ -607,11 +622,19 @@ var projectScriptSaveCmd = &cobra.Command{
 				textParts[i] = strings.TrimSpace(p)
 			}
 			// 根据 format 选择模板
-			if formatVal == 4 {
-				// 剪辑格式
-				script = generateClipScript(textParts, name)
-			} else {
-				// 默认 markdown 格式（format=1）
+			// format=1: 普通(markdown), format=2: 分镜, format=3: 口播, format=4: 剪辑
+			switch formatVal {
+			case 2:
+				// 分镜格式：简化 JSON 数组
+				script = generateFrameScript(textParts)
+			case 3:
+				// 口播格式：简化 JSON 单对象
+				script = generateSpeechScript(textParts)
+			case 4:
+				// 剪辑格式：简化 JSON 单对象
+				script = generateClipScriptSimple(textParts)
+			default:
+				// 默认 format=1，普通 markdown 格式
 				script = generateMarkdownScript(textParts, name)
 				formatVal = 1
 			}
@@ -801,6 +824,71 @@ func generateClipScript(texts []string, title string) string {
 	// 结尾 paragraph
 	endParaID := generateUUID()
 	return fmt.Sprintf(`{"type":"doc","content":[%s,%s,{"type":"paragraph","attrs":{"id":"%s","class":null,"textAlign":"left"}}]}`, titleHeading, clip, endParaID)
+}
+
+// generateFrameScript 生成分镜简化 JSON 格式脚本
+// 格式：[{"Copy":"文案","duration":5},...]
+func generateFrameScript(texts []string) string {
+	frames := []string{}
+	for _, text := range texts {
+		if text == "" {
+			continue
+		}
+		frame := fmt.Sprintf(`{"Copy":"%s","duration":5}`, text)
+		frames = append(frames, frame)
+	}
+	if len(frames) == 0 {
+		frames = []string{`{"Copy":"默认文案","duration":5}`}
+	}
+	return "[" + strings.Join(frames, ",") + "]"
+}
+
+// generateSpeechScript 生成口播简化 JSON 格式脚本
+// 格式：{"Content":"正文","Note":"备注"}
+func generateSpeechScript(texts []string) string {
+	content := ""
+	if len(texts) > 0 {
+		content = texts[0]
+	}
+	if content == "" {
+		content = "口播正文内容"
+	}
+	note := ""
+	if len(texts) > 1 {
+		note = texts[1]
+	}
+	result := fmt.Sprintf(`{"Content":"%s"`, content)
+	if note != "" {
+		result += fmt.Sprintf(`,"Note":"%s"`, note)
+	}
+	return result + "}"
+}
+
+// generateClipScriptSimple 生成剪辑简化 JSON 格式脚本
+// 格式：{"Start":"开场","Content":"主体","End":"结尾","duration":30}
+func generateClipScriptSimple(texts []string) string {
+	start := ""
+	content := ""
+	end := ""
+	if len(texts) >= 1 {
+		start = texts[0]
+	}
+	if len(texts) >= 2 {
+		content = texts[1]
+	}
+	if len(texts) >= 3 {
+		end = texts[2]
+	}
+	if start == "" {
+		start = "开场内容"
+	}
+	if content == "" {
+		content = "主体内容"
+	}
+	if end == "" {
+		end = "结尾内容"
+	}
+	return fmt.Sprintf(`{"Start":"%s","Content":"%s","End":"%s","duration":30}`, start, content, end)
 }
 
 // projectMaterialFissionFromTaskCmd 从脚本创建裂变素材
@@ -1058,10 +1146,10 @@ func init() {
 	// projectScriptSaveCmd 参数
 	projectScriptSaveCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
 	projectScriptSaveCmd.Flags().Int64("project-id", 0, "专案 ID（可选）")
-	projectScriptSaveCmd.Flags().Int("format", 0, "脚本格式（可选，不传自动推导：1=普通）")
+	projectScriptSaveCmd.Flags().Int("format", 0, "脚本格式（可选：1=普通 2=分镜 3=口播 4=剪辑，不传自动推导）")
 	projectScriptSaveCmd.Flags().String("name", "", "脚本名称（可选）")
-	projectScriptSaveCmd.Flags().String("script", "", "脚本内容 JSON（完整模板）")
-	projectScriptSaveCmd.Flags().String("text", "", "文本内容（自动生成 markdown 格式，逗号分隔：标题,内容1,内容2...）")
+	projectScriptSaveCmd.Flags().String("script", "", "脚本内容 JSON（简化或完整 doc JSON）")
+	projectScriptSaveCmd.Flags().String("text", "", "文本内容（根据 format 生成简化 JSON 或 Markdown，逗号分隔）")
 	projectScriptSaveCmd.Flags().String("markdown", "", "Markdown 内容（普通格式）")
 	projectScriptSaveCmd.Flags().String("product-ids", "", "关联产品 ID（逗号分隔）")
 	projectScriptSaveCmd.Flags().String("app-ids", "", "关联渠道应用 ID（逗号分隔）")
