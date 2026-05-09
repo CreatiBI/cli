@@ -5,18 +5,15 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/tidwall/gjson"
 
 	"github.com/CreatiBI/cli/internal/client"
 	"github.com/CreatiBI/cli/internal/config"
 	cliErr "github.com/CreatiBI/cli/internal/errors"
 	"github.com/CreatiBI/cli/internal/output"
-	"github.com/CreatiBI/cli/internal/upload"
 )
 
 // projectCmd 代表 project 命令组
@@ -604,21 +601,63 @@ func printMaterialTagsTable(cmd *cobra.Command, result *client.ListMaterialTagsR
 		return
 	}
 
-	t := output.NewTableWriter(w)
-	t.AppendHeader("素材ID", "标签")
-
-	for _, item := range result.MaterialTags {
-		tagNames := []string{}
-		for _, tag := range item.Tags {
-			tagNames = append(tagNames, tag.Name)
+	for _, mt := range result.MaterialTags {
+		fmt.Fprintf(w, "\n素材 ID: %d\n", mt.MaterialId)
+		fmt.Fprintf(w, "名称: %s\n", mt.Name)
+		fmt.Fprintf(w, "类型: %s (%s)\n", fileTypeText(mt.FileType), mt.Format)
+		if mt.Duration != "" {
+			fmt.Fprintf(w, "时长: %s 秒\n", mt.Duration)
 		}
-		t.AppendRow(
-			strconv.FormatInt(item.MaterialId, 10),
-			strings.Join(tagNames, ", "),
-		)
-	}
+		if mt.Resolution != "" {
+			fmt.Fprintf(w, "分辨率: %s\n", mt.Resolution)
+		}
+		fmt.Fprintf(w, "AI 标签状态: %s\n", aiTagsStatusText(mt.AiTagsStatus))
 
-	t.Render()
+		if mt.AiTagsStatus == 3 && len(mt.TagGroups) > 0 {
+			fmt.Fprintln(w, "\n智能标签:")
+			for _, tg := range mt.TagGroups {
+				fmt.Fprintf(w, "  [%s]\n", tg.Name)
+				for _, tf := range tg.TagFields {
+					tagNames := []string{}
+					for _, t := range tf.Tags.Tags {
+						tagNames = append(tagNames, t.Name)
+					}
+					fmt.Fprintf(w, "    %s: %s\n", tf.ViewName, strings.Join(tagNames, ", "))
+				}
+			}
+		}
+		fmt.Fprintln(w, "---")
+	}
+}
+
+// fileTypeText 文件类型文本
+func fileTypeText(fileType int) string {
+	switch fileType {
+	case 1:
+		return "视频"
+	case 2:
+		return "图片"
+	default:
+		return "未知"
+	}
+}
+
+// aiTagsStatusText AI 标签状态文本
+func aiTagsStatusText(status int) string {
+	switch status {
+	case 0:
+		return "未分析"
+	case 1:
+		return "准备分析"
+	case 2:
+		return "生成中"
+	case 3:
+		return "成功"
+	case 4:
+		return "失败"
+	default:
+		return "未知"
+	}
 }
 
 // projectMaterialScriptStructureCmd 获取素材脚本结构
@@ -1380,203 +1419,6 @@ var projectMaterialDerivativeFromMaterialCmd = &cobra.Command{
 	},
 }
 
-// projectDeliverableUploadCmd 上传交付物
-var projectDeliverableUploadCmd = &cobra.Command{
-	Use:   "deliverable-upload",
-	Short: "上传脚本交付物",
-	Long: `上传交付物（视频/图片）到脚本任务。
-
-支持上传 1-50 个文件，第一个文件为主文件，后续为裂变文件（多尺寸变体）。
-文件会先进行 MD5 去重检查，已存在的文件会跳过上传。
-
-示例：
-  # 上传单个文件
-  cbi project deliverable-upload --script-id 123 --file ./video.mp4
-
-  # 上传多个文件（主文件 + 裂变）
-  cbi project deliverable-upload --script-id 123 --file ./main.mp4 --file ./720p.mp4 --file ./480p.mp4`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		scriptId, _ := cmd.Flags().GetInt64("script-id")
-		if scriptId == 0 {
-			return cliErr.NewCLIError("MISSING_SCRIPT_ID", "必须指定 --script-id")
-		}
-
-		files, _ := cmd.Flags().GetStringArray("file")
-		if len(files) == 0 {
-			return cliErr.NewCLIError("MISSING_FILE", "必须指定 --file")
-		}
-		if len(files) > 50 {
-			return cliErr.NewCLIError("FILE_COUNT_EXCEEDED", "文件数量超出限制（最多 50 个）")
-		}
-
-		projectId, _ := cmd.Flags().GetInt64("project-id")
-
-		// 检查文件是否存在
-		for _, f := range files {
-			if _, err := os.Stat(f); err != nil {
-				return cliErr.NewCLIErrorWithDetail("FILE_NOT_FOUND", "文件不存在", f)
-			}
-		}
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		projectClient := client.NewProjectClient()
-
-		// 1. 计算文件 MD5
-		fmt.Fprintln(cmd.OutOrStdout(), "计算文件 MD5...")
-		hashes, err := upload.ComputeMD5Batch(files)
-		if err != nil {
-			return err
-		}
-
-		hashList := []string{}
-		for _, path := range files {
-			hashList = append(hashList, hashes[path])
-		}
-
-		// 2. 获取上传签名
-		fmt.Fprintln(cmd.OutOrStdout(), "获取上传签名...")
-		tokenResult, err := projectClient.GetUploadToken(ctx, &client.GetUploadTokenRequest{
-			FileHashes: hashList,
-		})
-		if err != nil {
-			return err
-		}
-
-		// 3. 构建文件路径列表
-		filePaths := []string{}
-		existingCount := 0
-
-		// 处理已存在文件
-		existingMap := make(map[string]string)
-		for _, ef := range tokenResult.ExistingFiles {
-			existingMap[ef.Hash] = ef.FilePath
-		}
-
-		for _, path := range files {
-			hash := hashes[path]
-			if filePath, ok := existingMap[hash]; ok {
-				// 文件已存在，直接使用路径
-				filePaths = append(filePaths, filePath)
-				existingCount++
-			} else {
-				// 文件不存在，需要上传
-				uploader, err := upload.NewOSSUploader(tokenResult.UploadToken, tokenResult.OSSPath, tokenResult.Region, tokenResult.Storage)
-				if err != nil {
-					return err
-				}
-
-				ossPath, err := uploader.Upload(path)
-				if err != nil {
-					return cliErr.NewCLIErrorWithDetail("UPLOAD_FAILED", "上传失败", err.Error())
-				}
-				filePaths = append(filePaths, ossPath)
-			}
-		}
-
-		// 4. 绑定交付物
-		fmt.Fprintln(cmd.OutOrStdout(), "绑定交付物...")
-		result, err := projectClient.AddScriptDeliverable(ctx, &client.AddScriptDeliverableRequest{
-			ScriptId:  scriptId,
-			ProjectId: projectId,
-			FilePaths: filePaths,
-		})
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, result)
-		}
-
-		fmt.Fprintln(cmd.OutOrStdout(), "✓ 交付物上传成功")
-		fmt.Fprintf(cmd.OutOrStdout(), "  脚本 ID: %d\n", result.ScriptId)
-		fmt.Fprintf(cmd.OutOrStdout(), "  添加数量: %d\n", result.AddedCount)
-		if existingCount > 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "  跳过已存在: %d\n", existingCount)
-		}
-		return nil
-	},
-}
-
-// projectDeliverableListCmd 获取交付物列表
-var projectDeliverableListCmd = &cobra.Command{
-	Use:   "deliverable-list",
-	Short: "获取脚本交付物列表",
-	Long: `获取脚本任务的交付物列表。
-
-示例：
-  cbi project deliverable-list --script-id 123
-  cbi project deliverable-list --script-id 123 --project-id 1`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		scriptId, _ := cmd.Flags().GetInt64("script-id")
-		if scriptId == 0 {
-			return cliErr.NewCLIError("MISSING_SCRIPT_ID", "必须指定 --script-id")
-		}
-
-		projectId, _ := cmd.Flags().GetInt64("project-id")
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		projectClient := client.NewProjectClient()
-		result, err := projectClient.ListScriptDeliverables(ctx, &client.ListScriptDeliverablesRequest{
-			ScriptId:  scriptId,
-			ProjectId: projectId,
-		})
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, result)
-		}
-
-		switch format {
-		case "json":
-			return outputData(cmd, result)
-		default:
-			printDeliverablesList(cmd, result)
-			return nil
-		}
-	},
-}
-
-// printDeliverablesList 输出交付物列表
-func printDeliverablesList(cmd *cobra.Command, result *client.ListScriptDeliverablesResult) {
-	w := cmd.OutOrStdout()
-
-	fmt.Fprintf(w, "脚本 ID: %d\n\n", result.TaskId)
-
-	// 解析 deliverables JSON
-	if result.Deliverables != "" {
-		fmt.Fprintln(w, "交付物:")
-		deliverables := gjson.Parse(result.Deliverables)
-		deliverables.ForEach(func(_, item gjson.Result) bool {
-			name := item.Get("name").String()
-			fileUrl := item.Get("fileUrl").String()
-			fileType := item.Get("fileType").Int()
-			fmt.Fprintf(w, "  - %s (%s, %s)\n", name, fileTypeName(int(fileType)), fileUrl)
-			return true
-		})
-	}
-
-	// 解析 attachments JSON
-	if result.Attachments != "" {
-		fmt.Fprintln(w, "\n附件:")
-		attachments := gjson.Parse(result.Attachments)
-		attachments.ForEach(func(_, item gjson.Result) bool {
-			name := item.Get("name").String()
-			link := item.Get("link").String()
-			fmt.Fprintf(w, "  - %s (%s)\n", name, link)
-			return true
-		})
-	}
-}
-
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
@@ -1595,8 +1437,6 @@ func init() {
 	projectMaterialCmd.AddCommand(projectMaterialFissionListCmd)
 	projectMaterialCmd.AddCommand(projectMaterialTagsCmd)
 	projectMaterialCmd.AddCommand(projectMaterialScriptStructureCmd)
-	projectCmd.AddCommand(projectDeliverableUploadCmd)
-	projectCmd.AddCommand(projectDeliverableListCmd)
 
 	// projectListCmd 参数
 	projectListCmd.Flags().String("keyword", "", "搜索关键词")
@@ -1692,13 +1532,4 @@ func init() {
 	// projectMaterialScriptStructureCmd 参数
 	projectMaterialScriptStructureCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
 	projectMaterialScriptStructureCmd.Flags().Int64("material-id", 0, "素材 ID（必填）")
-
-	// projectDeliverableUploadCmd 参数
-	projectDeliverableUploadCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
-	projectDeliverableUploadCmd.Flags().Int64("project-id", 0, "专案 ID（可选）")
-	projectDeliverableUploadCmd.Flags().StringArray("file", []string{}, "文件路径（必填，可多次指定）")
-
-	// projectDeliverableListCmd 参数
-	projectDeliverableListCmd.Flags().Int64("script-id", 0, "脚本任务 ID（必填）")
-	projectDeliverableListCmd.Flags().Int64("project-id", 0, "专案 ID（可选）")
 }
