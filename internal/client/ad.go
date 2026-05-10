@@ -270,7 +270,7 @@ func (c *AdClient) ListAdProducts(ctx context.Context, req *ListAdProductsReques
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(body).
 		Post("/openapi/v1/ad/product/list")
@@ -331,7 +331,7 @@ func (c *AdClient) GetAdPlatformSchema(ctx context.Context, appId int) (*AdPlatf
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
 			"appId": appId,
@@ -407,7 +407,7 @@ func (c *AdClient) ListAdAccounts(ctx context.Context, req *ListAdAccountsReques
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(body).
 		Post("/openapi/v1/ad/account/list")
@@ -493,7 +493,7 @@ func (c *AdClient) ListAdObjects(ctx context.Context, req *ListAdObjectsRequest)
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(body).
 		Post("/openapi/v1/ad/object/list")
@@ -553,7 +553,7 @@ func (c *AdClient) GetAdObjectDetail(ctx context.Context, appId int, objType int
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
 			"appId":   appId,
@@ -630,7 +630,7 @@ func (c *AdClient) ListMaterials(ctx context.Context, req *ListMaterialsRequest)
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(body).
 		Post("/openapi/v1/ad/material/list")
@@ -696,7 +696,7 @@ func (c *AdClient) GetMaterialInfo(ctx context.Context, appId int, materialID ui
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
 			"appId":      appId,
@@ -778,7 +778,7 @@ func (c *AdClient) ListAdObjectFields(ctx context.Context, appId int, objType in
 
 	resp, err := c.client.R().
 		SetContext(ctx).
-		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(map[string]interface{}{
 			"appId":   appId,

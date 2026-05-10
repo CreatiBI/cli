@@ -301,6 +301,73 @@ appId 支持数字或别名: oceanengine/oe(1), qianchuan/qc(5), tencent/tx(6)`,
 var adAccountCmd = &cobra.Command{
 	Use:   "account",
 	Short: "广告账户",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// If an accountId is provided, show account detail
+		if len(args) > 0 {
+			accountID := args[0]
+			product, _ := cmd.Flags().GetUint32("product")
+
+			ctx, cancel := newSignalCtx()
+			defer cancel()
+
+			adClient := client.NewAdClient()
+
+			// First try keyword search (may not work for account IDs)
+			result, err := adClient.ListAdAccounts(ctx, &client.ListAdAccountsRequest{
+				Keyword:   accountID,
+				ProductID: product,
+			})
+			if err != nil {
+				return err
+			}
+
+			// Find matching account
+			var found *client.AdAccount
+			for i := range result.Accounts {
+				if result.Accounts[i].AdAccountID == accountID || fmt.Sprintf("%d", result.Accounts[i].ID) == accountID {
+					found = &result.Accounts[i]
+					break
+				}
+			}
+			// If keyword didn't match but we got one result, use it
+			if found == nil && len(result.Accounts) == 1 {
+				found = &result.Accounts[0]
+			}
+
+			// If still not found, try getting accounts without keyword and search by ID
+			if found == nil {
+				searchResult, err := adClient.ListAdAccounts(ctx, &client.ListAdAccountsRequest{
+					ProductID: product,
+					Page:      1,
+					PageSize:   500,
+				})
+				if err != nil {
+					return err
+				}
+				for i := range searchResult.Accounts {
+					if searchResult.Accounts[i].AdAccountID == accountID || fmt.Sprintf("%d", searchResult.Accounts[i].ID) == accountID {
+						found = &searchResult.Accounts[i]
+						break
+					}
+				}
+			}
+
+			if found == nil {
+				return cliErr.NewCLIError("ACCOUNT_NOT_FOUND", fmt.Sprintf("未找到账户: %s", accountID))
+			}
+
+			if quiet {
+				return outputData(cmd, found)
+			}
+			if format == "json" {
+				return outputData(cmd, found)
+			}
+			printAdAccountDetail(cmd, found)
+			return nil
+		}
+		// No args, show help
+		return cmd.Help()
+	},
 }
 
 var adAccountListCmd = &cobra.Command{
@@ -349,57 +416,49 @@ var adAccountListCmd = &cobra.Command{
 	},
 }
 
-// Account detail: uses ListAdAccounts with keyword=accountId
-var adAccountDetailCmd = &cobra.Command{
-	Use:   "<accountId>",
-	Short: "账户详情",
-	Long:  `获取指定广告账户的详细信息。`,
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		accountID := args[0]
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		adClient := client.NewAdClient()
-		result, err := adClient.ListAdAccounts(ctx, &client.ListAdAccountsRequest{
-			Keyword: accountID,
-		})
-		if err != nil {
-			return err
-		}
-
-		// Find matching account
-		var found *client.AdAccount
-		for i := range result.Accounts {
-			if result.Accounts[i].AdAccountID == accountID || fmt.Sprintf("%d", result.Accounts[i].ID) == accountID {
-				found = &result.Accounts[i]
-				break
-			}
-		}
-		if found == nil && len(result.Accounts) == 1 {
-			found = &result.Accounts[0]
-		}
-		if found == nil {
-			return cliErr.NewCLIError("ACCOUNT_NOT_FOUND", fmt.Sprintf("未找到账户: %s", accountID))
-		}
-
-		if quiet {
-			return outputData(cmd, found)
-		}
-		if format == "json" {
-			return outputData(cmd, found)
-		}
-		printAdAccountDetail(cmd, found)
-		return nil
-	},
-}
-
 // ---- Advertiser sub-group ----
 
 var adAdvertiserCmd = &cobra.Command{
 	Use:   "advertiser",
 	Short: "广告主",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// If an objId is provided, show advertiser detail
+		if len(args) > 0 {
+			appStr, _ := cmd.Flags().GetString("app")
+			if appStr == "" {
+				return cliErr.NewCLIError("MISSING_APP", "必须指定 --app（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
+			}
+			appId, err := client.ResolveAppID(appStr)
+			if err != nil {
+				return err
+			}
+
+			objID, err := strconv.ParseUint(args[0], 10, 64)
+			if err != nil {
+				return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
+			}
+
+			ctx, cancel := newSignalCtx()
+			defer cancel()
+
+			adClient := client.NewAdClient()
+			obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeAdvertiser, objID)
+			if err != nil {
+				return err
+			}
+
+			if quiet {
+				return outputData(cmd, obj)
+			}
+			if format == "json" {
+				return outputData(cmd, obj)
+			}
+			printAdObjectDetail(cmd, obj)
+			return nil
+		}
+		// No args, show help
+		return cmd.Help()
+	},
 }
 
 var adAdvertiserListCmd = &cobra.Command{
@@ -443,47 +502,47 @@ var adAdvertiserListCmd = &cobra.Command{
 	},
 }
 
-var adAdvertiserDetailCmd = &cobra.Command{
-	Use:   "<objId>",
-	Short: "广告主详情",
-	Long:  `获取指定广告主的详细信息。`,
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appId, err := resolveRequiredApp(cmd)
-		if err != nil {
-			return err
-		}
-
-		objID, err := strconv.ParseUint(args[0], 10, 64)
-		if err != nil {
-			return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
-		}
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		adClient := client.NewAdClient()
-		obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeAdvertiser, objID)
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, obj)
-		}
-		if format == "json" {
-			return outputData(cmd, obj)
-		}
-		printAdObjectDetail(cmd, obj)
-		return nil
-	},
-}
-
 // ---- Campaign sub-group ----
 
 var adCampaignCmd = &cobra.Command{
 	Use:   "campaign",
 	Short: "广告计划",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			appStr, _ := cmd.Flags().GetString("app")
+			if appStr == "" {
+				return cliErr.NewCLIError("MISSING_APP", "必须指定 --app（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
+			}
+			appId, err := client.ResolveAppID(appStr)
+			if err != nil {
+				return err
+			}
+
+			objID, err := strconv.ParseUint(args[0], 10, 64)
+			if err != nil {
+				return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
+			}
+
+			ctx, cancel := newSignalCtx()
+			defer cancel()
+
+			adClient := client.NewAdClient()
+			obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeCampaign, objID)
+			if err != nil {
+				return err
+			}
+
+			if quiet {
+				return outputData(cmd, obj)
+			}
+			if format == "json" {
+				return outputData(cmd, obj)
+			}
+			printAdObjectDetail(cmd, obj)
+			return nil
+		}
+		return cmd.Help()
+	},
 }
 
 var adCampaignListCmd = &cobra.Command{
@@ -560,47 +619,47 @@ var adCampaignFieldsCmd = &cobra.Command{
 	},
 }
 
-var adCampaignDetailCmd = &cobra.Command{
-	Use:   "<objId>",
-	Short: "计划详情",
-	Long:  `获取指定广告计划的详细信息。`,
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appId, err := resolveRequiredApp(cmd)
-		if err != nil {
-			return err
-		}
-
-		objID, err := strconv.ParseUint(args[0], 10, 64)
-		if err != nil {
-			return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
-		}
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		adClient := client.NewAdClient()
-		obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeCampaign, objID)
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, obj)
-		}
-		if format == "json" {
-			return outputData(cmd, obj)
-		}
-		printAdObjectDetail(cmd, obj)
-		return nil
-	},
-}
-
 // ---- Adgroup sub-group ----
 
 var adAdgroupCmd = &cobra.Command{
 	Use:   "adgroup",
 	Short: "广告组",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			appStr, _ := cmd.Flags().GetString("app")
+			if appStr == "" {
+				return cliErr.NewCLIError("MISSING_APP", "必须指定 --app（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
+			}
+			appId, err := client.ResolveAppID(appStr)
+			if err != nil {
+				return err
+			}
+
+			objID, err := strconv.ParseUint(args[0], 10, 64)
+			if err != nil {
+				return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
+			}
+
+			ctx, cancel := newSignalCtx()
+			defer cancel()
+
+			adClient := client.NewAdClient()
+			obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeAdgroup, objID)
+			if err != nil {
+				return err
+			}
+
+			if quiet {
+				return outputData(cmd, obj)
+			}
+			if format == "json" {
+				return outputData(cmd, obj)
+			}
+			printAdObjectDetail(cmd, obj)
+			return nil
+		}
+		return cmd.Help()
+	},
 }
 
 var adAdgroupListCmd = &cobra.Command{
@@ -677,47 +736,47 @@ var adAdgroupFieldsCmd = &cobra.Command{
 	},
 }
 
-var adAdgroupDetailCmd = &cobra.Command{
-	Use:   "<objId>",
-	Short: "广告组详情",
-	Long:  `获取指定广告组的详细信息。`,
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appId, err := resolveRequiredApp(cmd)
-		if err != nil {
-			return err
-		}
-
-		objID, err := strconv.ParseUint(args[0], 10, 64)
-		if err != nil {
-			return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
-		}
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		adClient := client.NewAdClient()
-		obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeAdgroup, objID)
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, obj)
-		}
-		if format == "json" {
-			return outputData(cmd, obj)
-		}
-		printAdObjectDetail(cmd, obj)
-		return nil
-	},
-}
-
 // ---- Ads sub-group ----
 
 var adAdsCmd = &cobra.Command{
 	Use:   "ads",
 	Short: "广告",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			appStr, _ := cmd.Flags().GetString("app")
+			if appStr == "" {
+				return cliErr.NewCLIError("MISSING_APP", "必须指定 --app（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
+			}
+			appId, err := client.ResolveAppID(appStr)
+			if err != nil {
+				return err
+			}
+
+			objID, err := strconv.ParseUint(args[0], 10, 64)
+			if err != nil {
+				return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
+			}
+
+			ctx, cancel := newSignalCtx()
+			defer cancel()
+
+			adClient := client.NewAdClient()
+			obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeAds, objID)
+			if err != nil {
+				return err
+			}
+
+			if quiet {
+				return outputData(cmd, obj)
+			}
+			if format == "json" {
+				return outputData(cmd, obj)
+			}
+			printAdObjectDetail(cmd, obj)
+			return nil
+		}
+		return cmd.Help()
+	},
 }
 
 var adAdsListCmd = &cobra.Command{
@@ -803,47 +862,49 @@ var adAdsFieldsCmd = &cobra.Command{
 	},
 }
 
-var adAdsDetailCmd = &cobra.Command{
-	Use:   "<objId>",
-	Short: "广告详情",
-	Long:  `获取指定广告的详细信息。`,
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appId, err := resolveRequiredApp(cmd)
-		if err != nil {
-			return err
-		}
-
-		objID, err := strconv.ParseUint(args[0], 10, 64)
-		if err != nil {
-			return cliErr.NewCLIError("INVALID_OBJ_ID", fmt.Sprintf("无效的对象 ID: %s", args[0]))
-		}
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		adClient := client.NewAdClient()
-		obj, err := adClient.GetAdObjectDetail(ctx, appId, client.ObjTypeAds, objID)
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, obj)
-		}
-		if format == "json" {
-			return outputData(cmd, obj)
-		}
-		printAdObjectDetail(cmd, obj)
-		return nil
-	},
-}
-
 // ---- Creative sub-group ----
 
 var adCreativeCmd = &cobra.Command{
 	Use:   "creative",
 	Short: "广告素材",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			appStr, _ := cmd.Flags().GetString("app")
+			if appStr == "" {
+				return cliErr.NewCLIError("MISSING_APP", "必须指定 --app（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
+			}
+			appId, err := client.ResolveAppID(appStr)
+			if err != nil {
+				return err
+			}
+
+			materialID, err := strconv.ParseUint(args[0], 10, 64)
+			if err != nil {
+				return cliErr.NewCLIError("INVALID_MATERIAL_ID", fmt.Sprintf("无效的素材 ID: %s", args[0]))
+			}
+
+			withRelations, _ := cmd.Flags().GetBool("with-relations")
+
+			ctx, cancel := newSignalCtx()
+			defer cancel()
+
+			adClient := client.NewAdClient()
+			result, err := adClient.GetMaterialInfo(ctx, appId, materialID)
+			if err != nil {
+				return err
+			}
+
+			if quiet {
+				return outputData(cmd, result)
+			}
+			if format == "json" {
+				return outputData(cmd, result)
+			}
+			printAdMaterialDetail(cmd, result, withRelations, adClient)
+			return nil
+		}
+		return cmd.Help()
+	},
 }
 
 var adCreativeListCmd = &cobra.Command{
@@ -890,46 +951,6 @@ var adCreativeListCmd = &cobra.Command{
 			return outputData(cmd, result)
 		}
 		printAdMaterialTable(cmd, result)
-		return nil
-	},
-}
-
-var adCreativeDetailCmd = &cobra.Command{
-	Use:   "<materialId>",
-	Short: "素材详情",
-	Long: `获取指定广告素材的详细信息。
-
-使用 --with-relations 查看素材的关联链（原始素材、衍生素材、裂变素材、父素材）。`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		appId, err := resolveRequiredApp(cmd)
-		if err != nil {
-			return err
-		}
-
-		materialID, err := strconv.ParseUint(args[0], 10, 64)
-		if err != nil {
-			return cliErr.NewCLIError("INVALID_MATERIAL_ID", fmt.Sprintf("无效的素材 ID: %s", args[0]))
-		}
-
-		withRelations, _ := cmd.Flags().GetBool("with-relations")
-
-		ctx, cancel := newSignalCtx()
-		defer cancel()
-
-		adClient := client.NewAdClient()
-		result, err := adClient.GetMaterialInfo(ctx, appId, materialID)
-		if err != nil {
-			return err
-		}
-
-		if quiet {
-			return outputData(cmd, result)
-		}
-		if format == "json" {
-			return outputData(cmd, result)
-		}
-		printAdMaterialDetail(cmd, result, withRelations, adClient)
 		return nil
 	},
 }
@@ -1296,20 +1317,14 @@ func init() {
 	adProductCmd.AddCommand(adProductListCmd)
 	adChannelCmd.AddCommand(adChannelSchemaCmd)
 	adAccountCmd.AddCommand(adAccountListCmd)
-	adAccountCmd.AddCommand(adAccountDetailCmd)
 	adAdvertiserCmd.AddCommand(adAdvertiserListCmd)
-	adAdvertiserCmd.AddCommand(adAdvertiserDetailCmd)
 	adCampaignCmd.AddCommand(adCampaignListCmd)
 	adCampaignCmd.AddCommand(adCampaignFieldsCmd)
-	adCampaignCmd.AddCommand(adCampaignDetailCmd)
 	adAdgroupCmd.AddCommand(adAdgroupListCmd)
 	adAdgroupCmd.AddCommand(adAdgroupFieldsCmd)
-	adAdgroupCmd.AddCommand(adAdgroupDetailCmd)
 	adAdsCmd.AddCommand(adAdsListCmd)
 	adAdsCmd.AddCommand(adAdsFieldsCmd)
-	adAdsCmd.AddCommand(adAdsDetailCmd)
 	adCreativeCmd.AddCommand(adCreativeListCmd)
-	adCreativeCmd.AddCommand(adCreativeDetailCmd)
 
 	// Browse flags
 	adBrowseCmd.Flags().Bool("reset", false, "清除行业缓存并重新检测")
@@ -1320,6 +1335,8 @@ func init() {
 	adProductListCmd.Flags().Int("page", 1, "页码")
 	adProductListCmd.Flags().Int("page-size", 20, "每页条数")
 
+	// Account parent flags (for detail)
+	adAccountCmd.Flags().Uint32("product", 0, "产品 ID（用于筛选账户详情）")
 	// Account list flags
 	adAccountListCmd.Flags().String("app", "", "广告平台（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	adAccountListCmd.Flags().Uint32("product", 0, "产品 ID")
@@ -1327,8 +1344,8 @@ func init() {
 	adAccountListCmd.Flags().Int("page", 1, "页码")
 	adAccountListCmd.Flags().Int("page-size", 20, "每页条数")
 
-	// Account detail flags (none needed beyond positional arg)
-
+	// Advertiser parent flags (for detail)
+	adAdvertiserCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	// Advertiser list flags
 	adAdvertiserListCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	adAdvertiserListCmd.Flags().Uint32("product", 0, "产品 ID")
@@ -1336,9 +1353,8 @@ func init() {
 	adAdvertiserListCmd.Flags().Int("page", 1, "页码")
 	adAdvertiserListCmd.Flags().Int("page-size", 20, "每页条数")
 
-	// Advertiser detail flags
-	adAdvertiserDetailCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
-
+	// Campaign parent flags (for detail)
+	adCampaignCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	// Campaign list flags
 	adCampaignListCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	adCampaignListCmd.Flags().Uint64("advertiser", 0, "广告主 ID（作为上级筛选）")
@@ -1346,13 +1362,11 @@ func init() {
 	adCampaignListCmd.Flags().String("keyword", "", "搜索关键词")
 	adCampaignListCmd.Flags().Int("page", 1, "页码")
 	adCampaignListCmd.Flags().Int("page-size", 20, "每页条数")
-
 	// Campaign fields flags
 	adCampaignFieldsCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 
-	// Campaign detail flags
-	adCampaignDetailCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
-
+	// Adgroup parent flags (for detail)
+	adAdgroupCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	// Adgroup list flags
 	adAdgroupListCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	adAdgroupListCmd.Flags().Uint64("advertiser", 0, "广告主 ID（作为上级筛选）")
@@ -1360,13 +1374,11 @@ func init() {
 	adAdgroupListCmd.Flags().String("keyword", "", "搜索关键词")
 	adAdgroupListCmd.Flags().Int("page", 1, "页码")
 	adAdgroupListCmd.Flags().Int("page-size", 20, "每页条数")
-
 	// Adgroup fields flags
 	adAdgroupFieldsCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 
-	// Adgroup detail flags
-	adAdgroupDetailCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
-
+	// Ads parent flags (for detail)
+	adAdsCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	// Ads list flags
 	adAdsListCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	adAdsListCmd.Flags().Uint64("campaign", 0, "计划 ID（作为上级筛选）")
@@ -1375,13 +1387,12 @@ func init() {
 	adAdsListCmd.Flags().String("keyword", "", "搜索关键词")
 	adAdsListCmd.Flags().Int("page", 1, "页码")
 	adAdsListCmd.Flags().Int("page-size", 20, "每页条数")
-
 	// Ads fields flags
 	adAdsFieldsCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 
-	// Ads detail flags
-	adAdsDetailCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
-
+	// Creative parent flags (for detail)
+	adCreativeCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
+	adCreativeCmd.Flags().Bool("with-relations", false, "显示素材关联链")
 	// Creative list flags
 	adCreativeListCmd.Flags().String("app", "", "广告平台（1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
 	adCreativeListCmd.Flags().Uint32("product", 0, "产品 ID")
@@ -1389,8 +1400,4 @@ func init() {
 	adCreativeListCmd.Flags().String("keyword", "", "搜索关键词")
 	adCreativeListCmd.Flags().Int("page", 1, "页码")
 	adCreativeListCmd.Flags().Int("page-size", 20, "每页条数")
-
-	// Creative detail flags
-	adCreativeDetailCmd.Flags().String("app", "", "广告平台（必填，1/5/6 或别名: oceanengine/oe, qianchuan/qc, tencent/tx）")
-	adCreativeDetailCmd.Flags().Bool("with-relations", false, "显示素材关联链")
 }
