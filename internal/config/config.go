@@ -30,6 +30,9 @@ type AppConfig struct {
 	TokenExpiresAt        time.Time `json:"token_expires_at,omitempty"`
 	RefreshTokenExpiresAt time.Time `json:"refresh_token_expires_at,omitempty"`
 
+	// 广告行业缓存
+	AdIsEcomIndustry *bool `json:"ad_is_ecom_industry,omitempty"`
+
 	// 更新检查缓存
 	UpdateLastCheckedAt time.Time `json:"update_last_checked_at,omitempty"`
 	UpdateLatestVersion string    `json:"update_latest_version,omitempty"`
@@ -236,6 +239,35 @@ func Clear() error {
 		return cliErr.NewCLIErrorWithDetail("LOGOUT_FAILED", "退出登录失败", err.Error())
 	}
 	return nil
+}
+
+// GetAdIsEcomIndustry 获取广告行业缓存（nil=未检测）
+func GetAdIsEcomIndustry() *bool {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		return nil
+	}
+	return cfg.AdIsEcomIndustry
+}
+
+// SetAdIsEcomIndustry 设置广告行业缓存
+func SetAdIsEcomIndustry(isEcom bool) error {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		cfg = &AppConfig{}
+	}
+	cfg.AdIsEcomIndustry = &isEcom
+	return SaveAppConfig(cfg)
+}
+
+// ClearAdIsEcomIndustry 清除广告行业缓存
+func ClearAdIsEcomIndustry() error {
+	cfg, err := LoadAppConfig()
+	if err != nil {
+		cfg = &AppConfig{}
+	}
+	cfg.AdIsEcomIndustry = nil
+	return SaveAppConfig(cfg)
 }
 
 // GetUpdateLastCheckedAt 获取上次更新检查时间
