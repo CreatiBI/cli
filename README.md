@@ -49,6 +49,7 @@ npx skills add CreatiBI/cli -y -g
 - `文件查重`、`批量添加标签`、`批量添加文件夹`
 - `cbi project`、`专案`、`专案列表`
 - `cbi portfolio`、`专案集`、`专案集列表`
+- `cbi ad`、`广告`、`广告数据`、`广告账户`、`广告素材`
 
 ## 快速开始
 
@@ -70,6 +71,9 @@ cbi project list
 
 # 6. 上传文件到素材库
 cbi repository file-create --repository-id 1 --file ./image.png
+
+# 7. 查看广告数据
+cbi ad browse
 ```
 
 ---
@@ -85,6 +89,25 @@ cbi
 │   ├── login                 # OAuth 登录
 │   ├── whoami                # 查看当前身份
 │   └── logout                # 退出登录
+├── ad                        # 广告数据查询
+│   ├── browse                # 智能入口（检测行业+缓存）
+│   ├── product list          # 产品列表
+│   ├── channel schema <appId># 平台层级结构
+│   ├── account list          # 账户列表
+│   ├── account <accountId>   # 账户详情
+│   ├── advertiser list       # 广告主列表
+│   ├── advertiser <objId>    # 广告主详情
+│   ├── campaign list         # 计划列表
+│   ├── campaign fields       # 计划字段定义
+│   ├── campaign <objId>      # 计划详情
+│   ├── adgroup list          # 广告组列表
+│   ├── adgroup fields        # 广告组字段定义
+│   ├── adgroup <objId>       # 广告组详情
+│   ├── ads list              # 广告列表
+│   ├── ads fields            # 广告字段定义
+│   ├── ads <objId>           # 广告详情
+│   ├── creative list         # 素材列表
+│   └── creative <materialId> # 素材详情（--with-relations）
 └── repository (repo)         # 素材库管理
     ├── list                  # 素材库列表
     ├── folders               # 文件夹列表
@@ -1362,6 +1385,216 @@ cbi portfolio project-list --portfolio-id 1 --format json
 - 4 = 暂停
 - 5 = 完成
 - 6 = 无更新
+
+---
+
+## 广告模块 (ad)
+
+查询广告投放数据，支持三大广告平台（巨量引擎、巨量千川、腾讯广告）。
+
+### 平台标识
+
+| appId | 别名 | 平台名称 |
+|-------|------|----------|
+| 1 | `oceanengine`, `oe`, `juiliang` | 巨量引擎 |
+| 5 | `qianchuan`, `qc` | 巨量千川 |
+| 6 | `tencent`, `tx`, `guangdian` | 腾讯广告 |
+
+所有 `--app` 参数均支持数字和别名两种形式。
+
+### 层级结构
+
+| 平台 | 层级 |
+|------|------|
+| 巨量引擎 | 广告主 → 计划 → 广告 → 素材 |
+| 千川 | 广告主 → 广告 → 素材 |
+| 腾讯广告 | 广告主 → 广告组 → 创意 → 素材 |
+
+### 智能入口
+
+```bash
+# 自动检测行业类型并导航
+cbi ad browse
+
+# 清除行业缓存，重新检测
+cbi ad browse --reset
+
+# 按平台筛选
+cbi ad browse --app oceanengine
+```
+
+browse 命令自动检测行业类型（电商/非电商），非电商行业显示产品列表，电商行业直接进入账户列表。检测结果缓存到 `~/.cbi/config.json`，下次跳过检测。
+
+### 产品列表
+
+```bash
+# 列出广告产品
+cbi ad product list
+
+# 搜索
+cbi ad product list --keyword "游戏"
+
+# 分页
+cbi ad product list --page 2 --page-size 10
+```
+
+参数：
+- `--keyword`: 搜索关键词
+- `--page`: 页码（默认 1）
+- `--page-size`: 每页条数（默认 20）
+
+### 平台层级结构
+
+```bash
+# 查看巨量引擎层级
+cbi ad channel schema oceanengine
+
+# 使用 appId
+cbi ad channel schema 1
+
+# 腾讯广告
+cbi ad channel schema tencent
+```
+
+输出平台层级结构和常用字段列表。
+
+### 账户列表与详情
+
+```bash
+# 列出所有账户
+cbi ad account list
+
+# 按平台筛选
+cbi ad account list --app oceanengine
+
+# 按产品筛选
+cbi ad account list --product 123
+
+# 搜索
+cbi ad account list --keyword "公司"
+
+# 账户详情
+cbi ad account 456
+```
+
+参数（list）：
+- `--app`: 广告平台（1/5/6 或别名）
+- `--product`: 产品 ID
+- `--keyword`: 搜索关键词
+- `--page` / `--page-size`: 分页
+
+输出字段：账户ID、账户名、平台、授权状态、余额、近7日消耗、近30日消耗
+
+### 广告主
+
+```bash
+# 列出广告主（--app 必填）
+cbi ad advertiser list --app oceanengine
+
+# 按产品筛选
+cbi ad advertiser list --app oe --product 123
+
+# 广告主详情
+cbi ad advertiser 12345 --app oceanengine
+```
+
+参数（list）：
+- `--app`: 广告平台（必填）
+- `--product`: 产品 ID
+- `--keyword`: 搜索关键词
+
+### 广告计划
+
+```bash
+# 列出计划（--app 必填）
+cbi ad campaign list --app oceanengine
+
+# 查看某广告主下的计划
+cbi ad campaign list --app oe --advertiser 12345
+
+# 计划字段定义
+cbi ad campaign fields --app oceanengine
+
+# 计划详情
+cbi ad campaign 78901234 --app oceanengine
+```
+
+参数（list）：
+- `--app`: 广告平台（必填）
+- `--advertiser`: 广告主 ID（层级筛选）
+- `--product`: 产品 ID
+- `--keyword`: 搜索关键词
+
+### 广告组
+
+```bash
+# 列出广告组（腾讯广告）
+cbi ad adgroup list --app tencent
+
+# 查看某广告主下的广告组
+cbi ad adgroup list --app tx --advertiser 12345
+
+# 广告组字段定义
+cbi ad adgroup fields --app tencent
+
+# 广告组详情
+cbi ad adgroup 67890 --app tencent
+```
+
+参数与广告计划相同。
+
+### 广告
+
+```bash
+# 列出广告
+cbi ad ads list --app oceanengine
+
+# 查看某计划下的广告
+cbi ad ads list --app oe --campaign 78901234
+
+# 查看某广告组下的广告（腾讯）
+cbi ad ads list --app tencent --adgroup 67890
+
+# 广告字段定义
+cbi ad ads fields --app oceanengine
+
+# 广告详情
+cbi ad ads 11111 --app oceanengine
+```
+
+参数（list）：
+- `--app`: 广告平台（必填）
+- `--campaign`: 计划 ID（巨量引擎/千川层级筛选）
+- `--adgroup`: 广告组 ID（腾讯广告层级筛选）
+- `--product`: 产品 ID
+- `--keyword`: 搜索关键词
+
+### 素材
+
+```bash
+# 列出素材
+cbi ad creative list
+
+# 按平台筛选
+cbi ad creative list --app oceanengine
+
+# 按类型筛选
+cbi ad creative list --material-type 1  # 视频
+
+# 素材详情
+cbi ad creative 56789 --app oceanengine
+
+# 素材详情 + 关联素材信息
+cbi ad creative 56789 --app oceanengine --with-relations
+```
+
+参数（list）：
+- `--app`: 广告平台
+- `--product`: 产品 ID
+- `--material-type`: 素材类型（1=视频, 2=图片）
+- `--keyword`: 搜索关键词
+
+`--with-relations` 输出素材关系链：原始素材、衍生素材、裂变素材、父素材，并查询每个关联素材的名称和类型。
 
 ---
 

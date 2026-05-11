@@ -49,6 +49,9 @@ AGENTS.md
 # 编译产物（根目录）
 /cli
 
+# npm 包产物
+*.tgz
+
 # npm 发布配置（含 token）
 .npmrc.publish
 .npmrc
