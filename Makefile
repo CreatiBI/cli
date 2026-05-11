@@ -2,7 +2,7 @@
 
 # 项目名称
 PROJECT_NAME := cbi
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "0.1.0")
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo "0.1.0")
 BUILD_DIR := ./bin
 
 # 构建参数

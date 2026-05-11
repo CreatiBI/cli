@@ -131,6 +131,8 @@ func compareVersions(latest, current string) bool {
 // printUpdateNotice 输出更新提示
 func printUpdateNotice(info *UpdateInfo) {
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintf(os.Stderr, "📌 提示: 有新版本可用 (v%s)，当前版本 v%s\n", info.LatestVersion, info.CurrentVersion)
+	fmt.Fprintf(os.Stderr, "📌 提示: 有新版本可用 (v%s)，当前版本 v%s\n",
+		strings.TrimPrefix(info.LatestVersion, "v"),
+		strings.TrimPrefix(info.CurrentVersion, "v"))
 	fmt.Fprintln(os.Stderr, "   运行 npm update -g @creatibi/cbi-cli 更新")
 }
