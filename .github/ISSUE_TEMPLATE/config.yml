@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 cbi CLI 使用文档
+    url: https://github.com/CreatiBI/cli#readme
+    about: 查看 README 了解 cbi CLI 的完整命令和使用方法
