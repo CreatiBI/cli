@@ -115,10 +115,16 @@ func fetchLatestVersion(ctx context.Context) (string, error) {
 }
 
 // compareVersions 比较版本号，返回 true 表示 latest > current
+// 开发版本号可能包含 git 偏移（如 0.2.1-3-gc255d1d），需要先剥离再比较
 func compareVersions(latest, current string) bool {
+	// 剥离 git describe 的偏移后缀（如 "-3-gc255d1d" 或 "-dirty"）
+	// 只保留基础版本号用于比较
+	currentBase := stripGitDescribeSuffix(current)
+	latestBase := stripGitDescribeSuffix(latest)
+
 	// semver 需要 "v" 前缀
-	vLatest := "v" + strings.TrimPrefix(latest, "v")
-	vCurrent := "v" + strings.TrimPrefix(current, "v")
+	vLatest := "v" + strings.TrimPrefix(latestBase, "v")
+	vCurrent := "v" + strings.TrimPrefix(currentBase, "v")
 
 	// 确保版本号格式正确
 	if !semver.IsValid(vLatest) || !semver.IsValid(vCurrent) {
@@ -128,11 +134,59 @@ func compareVersions(latest, current string) bool {
 	return semver.Compare(vLatest, vCurrent) > 0
 }
 
+// stripGitDescribeSuffix 剥离 git describe 生成的偏移后缀
+// 例如：0.2.1-3-gc255d1d-dirty → 0.2.1
+// 例如：0.2.1 → 0.2.1（无变化）
+func stripGitDescribeSuffix(version string) string {
+	// git describe 格式：<tag>-<N>-g<hash>[-dirty]
+	// 找到第一个 "-<数字>-g" 模式并截断
+	for i := 0; i < len(version); i++ {
+		if version[i] == '-' && i+1 < len(version) {
+			// 检查是否是 git describe 的偏移部分（-N-g<hash>）
+			rest := version[i+1:]
+			// 偏移部分以数字开头，后面跟着 "-g"
+			dashG := strings.Index(rest, "-g")
+			if dashG > 0 {
+				// 验证偏移数字部分
+				offsetPart := rest[:dashG]
+				if isDigitString(offsetPart) {
+					return version[:i]
+				}
+			}
+		}
+	}
+
+	// 也处理 -dirty 后缀
+	if strings.HasSuffix(version, "-dirty") {
+		return strings.TrimSuffix(version, "-dirty")
+	}
+
+	return version
+}
+
+// isDigitString 检查字符串是否全为数字
+func isDigitString(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 // printUpdateNotice 输出更新提示
 func printUpdateNotice(info *UpdateInfo) {
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintf(os.Stderr, "📌 提示: 有新版本可用 (v%s)，当前版本 v%s\n",
-		strings.TrimPrefix(info.LatestVersion, "v"),
-		strings.TrimPrefix(info.CurrentVersion, "v"))
+	// 确保版本号显示只有一个 v 前缀
+	latestDisplay := ensureVPrefix(info.LatestVersion)
+	currentDisplay := ensureVPrefix(info.CurrentVersion)
+	fmt.Fprintf(os.Stderr, "📌 提示: 有新版本可用 (%s)，当前版本 %s\n",
+		latestDisplay, currentDisplay)
 	fmt.Fprintln(os.Stderr, "   运行 npm update -g @creatibi/cbi-cli 更新")
+}
+
+// ensureVPrefix 确保版本号有且仅有一个 v 前缀
+func ensureVPrefix(version string) string {
+	v := strings.TrimPrefix(version, "v")
+	return "v" + v
 }
