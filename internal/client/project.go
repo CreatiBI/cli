@@ -1470,22 +1470,39 @@ func (c *ProjectClient) GetMaterialScriptStructure(ctx context.Context, req *Get
 
 // ProjectProduct 专案关联的产品
 type ProjectProduct struct {
-	ID          int64  `json:"id"`
-	Name        string `json:"name"`
-	Img         string `json:"img"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
-	Type        int    `json:"type"` // 1=应用, 2=游戏, 3=商品
+	ProductId   int64            `json:"productId"`
+	Name        string           `json:"name"`
+	Img         string           `json:"img"`
+	Desc        string           `json:"desc"`
+	URL         string           `json:"url"`
+	Type        int              `json:"type"`      // 1=应用, 2=游戏, 3=商品, 4=小程序, 5=快应用
+	Classify    *ProductClassify `json:"classify"`  // 产品分类
+	Tags        []ProductTag     `json:"tags"`      // 产品标签
+}
+
+// ProductClassify 产品分类
+type ProductClassify struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// ProductTag 产品标签
+type ProductTag struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
 }
 
 // ListProjectProductsRequest 专案产品列表请求
 type ListProjectProductsRequest struct {
-	ProjectId int64
+	ProjectId      int64
+	ProductSource  int // 0=产品库, 2=电商产品
 }
 
 // ListProjectProductsResult 专案产品列表结果
 type ListProjectProductsResult struct {
-	Products []ProjectProduct `json:"products"`
+	ProjectId int64            `json:"projectId"`
+	Products  []ProjectProduct `json:"products"`
 }
 
 // ListProjectProducts 获取专案关联的产品列表
@@ -1497,6 +1514,9 @@ func (c *ProjectClient) ListProjectProducts(ctx context.Context, req *ListProjec
 
 	body := map[string]interface{}{
 		"projectId": req.ProjectId,
+	}
+	if req.ProductSource > 0 {
+		body["productSource"] = req.ProductSource
 	}
 
 	resp, err := c.client.R().
@@ -1527,34 +1547,66 @@ func (c *ProjectClient) ListProjectProducts(ctx context.Context, req *ListProjec
 	}
 
 	products := []ProjectProduct{}
-	data := result.Get("data.products")
-	data.ForEach(func(_, value gjson.Result) bool {
-		products = append(products, ProjectProduct{
-			ID:          value.Get("id").Int(),
-			Name:        value.Get("name").String(),
-			Img:         value.Get("img").String(),
-			URL:         value.Get("url").String(),
-			Description: value.Get("description").String(),
-			Type:        int(value.Get("type").Int()),
+	result.Get("data.products").ForEach(func(_, value gjson.Result) bool {
+		p := ProjectProduct{
+			ProductId: value.Get("productId").Int(),
+			Name:      value.Get("name").String(),
+			Img:       value.Get("img").String(),
+			Desc:      value.Get("desc").String(),
+			URL:       value.Get("url").String(),
+			Type:      int(value.Get("type").Int()),
+		}
+		// 解析 classify
+		classifyData := value.Get("classify")
+		if classifyData.Exists() {
+			p.Classify = &ProductClassify{
+				ID:   classifyData.Get("id").Int(),
+				Name: classifyData.Get("name").String(),
+			}
+		}
+		// 解析 tags
+		value.Get("tags").ForEach(func(_, tag gjson.Result) bool {
+			p.Tags = append(p.Tags, ProductTag{
+				ID:    tag.Get("id").Int(),
+				Name:  tag.Get("name").String(),
+				Color: tag.Get("color").String(),
+			})
+			return true
 		})
+		products = append(products, p)
 		return true
 	})
 
-	return &ListProjectProductsResult{Products: products}, nil
+	return &ListProjectProductsResult{
+		ProjectId: result.Get("data.projectId").Int(),
+		Products:  products,
+	}, nil
+}
+
+// BindProductResultItem 绑定单个产品的结果
+type BindProductResultItem struct {
+	ProductId int64  `json:"productId"`
+	Name      string `json:"name"`
+	Img       string `json:"img"`
+	Type      int    `json:"type"`  // 1=应用, 2=游戏, 3=商品, 4=小程序, 5=快应用
+	Success   bool   `json:"success"`
+	Error     string `json:"error"`
 }
 
 // BindProductRequest 专案绑定产品请求
 type BindProductRequest struct {
-	ProjectId int64
-	ProductId int64
+	ProjectId      int64
+	ProductIds     []int64 // 1-50 个产品 ID
+	ProductSource  int     // 0=产品库, 2=电商产品
 }
 
 // BindProductResult 专案绑定产品结果
 type BindProductResult struct {
-	Success bool `json:"success"`
+	BindCount int                `json:"bindCount"`
+	Results   []BindProductResultItem `json:"results"`
 }
 
-// BindProduct 给专案绑定产品
+// BindProduct 给专案绑定产品（批量）
 func (c *ProjectClient) BindProduct(ctx context.Context, req *BindProductRequest) (*BindProductResult, error) {
 	accessToken := config.GetAPIKey()
 	if accessToken == "" {
@@ -1563,7 +1615,10 @@ func (c *ProjectClient) BindProduct(ctx context.Context, req *BindProductRequest
 
 	body := map[string]interface{}{
 		"projectId":  req.ProjectId,
-		"productId":  req.ProductId,
+		"productIds": req.ProductIds,
+	}
+	if req.ProductSource > 0 {
+		body["productSource"] = req.ProductSource
 	}
 
 	resp, err := c.client.R().
@@ -1571,7 +1626,7 @@ func (c *ProjectClient) BindProduct(ctx context.Context, req *BindProductRequest
 		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(body).
-		Post("/openapi/v1/project/product/add")
+		Post("/openapi/v1/project/product/bind")
 
 	if err != nil {
 		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
@@ -1593,23 +1648,38 @@ func (c *ProjectClient) BindProduct(ctx context.Context, req *BindProductRequest
 			fmt.Sprintf("专案绑定产品失败 (%d)", codeVal), message)
 	}
 
+	items := []BindProductResultItem{}
+	result.Get("data.results").ForEach(func(_, value gjson.Result) bool {
+		items = append(items, BindProductResultItem{
+			ProductId: value.Get("productId").Int(),
+			Name:      value.Get("name").String(),
+			Img:       value.Get("img").String(),
+			Type:      int(value.Get("type").Int()),
+			Success:   value.Get("success").Bool(),
+			Error:     value.Get("error").String(),
+		})
+		return true
+	})
+
 	return &BindProductResult{
-		Success: result.Get("data.success").Bool(),
+		BindCount: int(result.Get("data.bindCount").Int()),
+		Results:   items,
 	}, nil
 }
 
 // UnbindProductRequest 专案解绑产品请求
 type UnbindProductRequest struct {
-	ProjectId int64
-	ProductId int64
+	ProjectId      int64
+	ProductIds     []int64
+	ProductSource  int // 0=产品库, 2=电商产品
 }
 
 // UnbindProductResult 专案解绑产品结果
 type UnbindProductResult struct {
-	Success bool `json:"success"`
+	UnbindCount int `json:"unbindCount"`
 }
 
-// UnbindProduct 给专案解绑产品
+// UnbindProduct 给专案解绑产品（批量）
 func (c *ProjectClient) UnbindProduct(ctx context.Context, req *UnbindProductRequest) (*UnbindProductResult, error) {
 	accessToken := config.GetAPIKey()
 	if accessToken == "" {
@@ -1618,7 +1688,10 @@ func (c *ProjectClient) UnbindProduct(ctx context.Context, req *UnbindProductReq
 
 	body := map[string]interface{}{
 		"projectId":  req.ProjectId,
-		"productId":  req.ProductId,
+		"productIds": req.ProductIds,
+	}
+	if req.ProductSource > 0 {
+		body["productSource"] = req.ProductSource
 	}
 
 	resp, err := c.client.R().
@@ -1626,7 +1699,7 @@ func (c *ProjectClient) UnbindProduct(ctx context.Context, req *UnbindProductReq
 		SetHeader("user-access-token", accessToken).
 		SetHeader("Content-Type", "application/json").
 		SetBody(body).
-		Post("/openapi/v1/project/product/remove")
+		Post("/openapi/v1/project/product/unbind")
 
 	if err != nil {
 		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
@@ -1649,7 +1722,7 @@ func (c *ProjectClient) UnbindProduct(ctx context.Context, req *UnbindProductReq
 	}
 
 	return &UnbindProductResult{
-		Success: result.Get("data.success").Bool(),
+		UnbindCount: int(result.Get("data.unbindCount").Int()),
 	}, nil
 }
 
