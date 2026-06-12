@@ -1419,6 +1419,185 @@ var projectMaterialDerivativeFromMaterialCmd = &cobra.Command{
 	},
 }
 
+// projectProductListCmd 专案产品列表
+var projectProductListCmd = &cobra.Command{
+	Use:   "product-list",
+	Short: "获取专案已绑定的产品列表",
+	Long: `获取专案已绑定的产品信息，包括产品名称、类型、描述等。
+
+产品类型：
+  1 = 应用
+  2 = 游戏
+  3 = 商品
+
+示例：
+  cbi project product-list --project-id 1
+  cbi project product-list --project-id 1 --format json`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, _ := cmd.Flags().GetInt64("project-id")
+		if projectID == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		ctx, cancel := newSignalCtx()
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.ListProjectProducts(ctx, &client.ListProjectProductsRequest{
+			ProjectId: projectID,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		switch format {
+		case "json":
+			return outputData(cmd, result)
+		default:
+			printProjectProductListTable(cmd, result)
+			return nil
+		}
+	},
+}
+
+// printProjectProductListTable 表格输出专案产品列表
+func printProjectProductListTable(cmd *cobra.Command, result *client.ListProjectProductsResult) {
+	w := cmd.OutOrStdout()
+
+	if len(result.Products) == 0 {
+		fmt.Fprintln(w, "该专案未绑定任何产品")
+		return
+	}
+
+	fmt.Fprintf(w, "共 %d 个产品\n\n", len(result.Products))
+
+	t := output.NewTableWriter(w)
+	t.AppendHeader("ID", "名称", "类型", "描述", "URL")
+
+	productTypeNames := map[int]string{
+		1: "应用",
+		2: "游戏",
+		3: "商品",
+	}
+
+	for _, p := range result.Products {
+		typeName := productTypeNames[p.Type]
+		if typeName == "" {
+			typeName = strconv.Itoa(p.Type)
+		}
+		desc := p.Description
+		if desc == "" {
+			desc = "-"
+		}
+		url := p.URL
+		if url == "" {
+			url = "-"
+		}
+		t.AppendRow(
+			strconv.FormatInt(p.ID, 10),
+			p.Name,
+			typeName,
+			desc,
+			url,
+		)
+	}
+
+	t.Render()
+}
+
+// projectBindProductCmd 专案绑定产品
+var projectBindProductCmd = &cobra.Command{
+	Use:   "bind-product",
+	Short: "给专案绑定产品",
+	Long: `给专案绑定一个产品，建立专案与产品的关联关系。
+
+产品需先在素材库中创建，可通过 cbi repository product-list 查看。
+
+示例：
+  cbi project bind-product --project-id 1 --product-id 100`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, _ := cmd.Flags().GetInt64("project-id")
+		if projectID == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		productID, _ := cmd.Flags().GetInt64("product-id")
+		if productID == 0 {
+			return cliErr.NewCLIError("MISSING_PRODUCT_ID", "必须指定 --product-id")
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.BindProduct(ctx, &client.BindProductRequest{
+			ProjectId: projectID,
+			ProductId: productID,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 产品绑定成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  专案 ID: %d\n", projectID)
+		fmt.Fprintf(cmd.OutOrStdout(), "  产品 ID: %d\n", productID)
+		return nil
+	},
+}
+
+// projectUnbindProductCmd 专案解绑产品
+var projectUnbindProductCmd = &cobra.Command{
+	Use:   "unbind-product",
+	Short: "给专案解绑产品",
+	Long: `移除专案与产品的关联关系。
+
+示例：
+  cbi project unbind-product --project-id 1 --product-id 100`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, _ := cmd.Flags().GetInt64("project-id")
+		if projectID == 0 {
+			return cliErr.NewCLIError("MISSING_PROJECT_ID", "必须指定 --project-id")
+		}
+
+		productID, _ := cmd.Flags().GetInt64("product-id")
+		if productID == 0 {
+			return cliErr.NewCLIError("MISSING_PRODUCT_ID", "必须指定 --product-id")
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		projectClient := client.NewProjectClient()
+		result, err := projectClient.UnbindProduct(ctx, &client.UnbindProductRequest{
+			ProjectId: projectID,
+			ProductId: productID,
+		})
+		if err != nil {
+			return err
+		}
+
+		if quiet {
+			return outputData(cmd, result)
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ 产品解绑成功")
+		fmt.Fprintf(cmd.OutOrStdout(), "  专案 ID: %d\n", projectID)
+		fmt.Fprintf(cmd.OutOrStdout(), "  产品 ID: %d\n", productID)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
@@ -1428,6 +1607,9 @@ func init() {
 	projectCmd.AddCommand(projectScriptCreateCmd)
 	projectCmd.AddCommand(projectScriptGetCmd)
 	projectCmd.AddCommand(projectScriptSaveCmd)
+	projectCmd.AddCommand(projectProductListCmd)
+	projectCmd.AddCommand(projectBindProductCmd)
+	projectCmd.AddCommand(projectUnbindProductCmd)
 	projectCmd.AddCommand(projectMaterialCmd)
 	projectMaterialCmd.AddCommand(projectMaterialFissionFromTaskCmd)
 	projectMaterialCmd.AddCommand(projectMaterialDerivativeFromTaskCmd)
@@ -1532,4 +1714,15 @@ func init() {
 	// projectMaterialScriptStructureCmd 参数
 	projectMaterialScriptStructureCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
 	projectMaterialScriptStructureCmd.Flags().Int64("material-id", 0, "素材 ID（必填）")
+
+	// projectProductListCmd 参数
+	projectProductListCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+
+	// projectBindProductCmd 参数
+	projectBindProductCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectBindProductCmd.Flags().Int64("product-id", 0, "产品 ID（必填）")
+
+	// projectUnbindProductCmd 参数
+	projectUnbindProductCmd.Flags().Int64("project-id", 0, "专案 ID（必填）")
+	projectUnbindProductCmd.Flags().Int64("product-id", 0, "产品 ID（必填）")
 }

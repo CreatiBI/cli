@@ -1468,6 +1468,191 @@ func (c *ProjectClient) GetMaterialScriptStructure(ctx context.Context, req *Get
 	}, nil
 }
 
+// ProjectProduct 专案关联的产品
+type ProjectProduct struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Img         string `json:"img"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	Type        int    `json:"type"` // 1=应用, 2=游戏, 3=商品
+}
+
+// ListProjectProductsRequest 专案产品列表请求
+type ListProjectProductsRequest struct {
+	ProjectId int64
+}
+
+// ListProjectProductsResult 专案产品列表结果
+type ListProjectProductsResult struct {
+	Products []ProjectProduct `json:"products"`
+}
+
+// ListProjectProducts 获取专案关联的产品列表
+func (c *ProjectClient) ListProjectProducts(ctx context.Context, req *ListProjectProductsRequest) (*ListProjectProductsResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId": req.ProjectId,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/product/list")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PROJECT_PRODUCT_LIST_ERROR",
+			fmt.Sprintf("获取专案产品列表失败 (%d)", codeVal), message)
+	}
+
+	products := []ProjectProduct{}
+	data := result.Get("data.products")
+	data.ForEach(func(_, value gjson.Result) bool {
+		products = append(products, ProjectProduct{
+			ID:          value.Get("id").Int(),
+			Name:        value.Get("name").String(),
+			Img:         value.Get("img").String(),
+			URL:         value.Get("url").String(),
+			Description: value.Get("description").String(),
+			Type:        int(value.Get("type").Int()),
+		})
+		return true
+	})
+
+	return &ListProjectProductsResult{Products: products}, nil
+}
+
+// BindProductRequest 专案绑定产品请求
+type BindProductRequest struct {
+	ProjectId int64
+	ProductId int64
+}
+
+// BindProductResult 专案绑定产品结果
+type BindProductResult struct {
+	Success bool `json:"success"`
+}
+
+// BindProduct 给专案绑定产品
+func (c *ProjectClient) BindProduct(ctx context.Context, req *BindProductRequest) (*BindProductResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId":  req.ProjectId,
+		"productId":  req.ProductId,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/product/add")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PROJECT_BIND_PRODUCT_ERROR",
+			fmt.Sprintf("专案绑定产品失败 (%d)", codeVal), message)
+	}
+
+	return &BindProductResult{
+		Success: result.Get("data.success").Bool(),
+	}, nil
+}
+
+// UnbindProductRequest 专案解绑产品请求
+type UnbindProductRequest struct {
+	ProjectId int64
+	ProductId int64
+}
+
+// UnbindProductResult 专案解绑产品结果
+type UnbindProductResult struct {
+	Success bool `json:"success"`
+}
+
+// UnbindProduct 给专案解绑产品
+func (c *ProjectClient) UnbindProduct(ctx context.Context, req *UnbindProductRequest) (*UnbindProductResult, error) {
+	accessToken := config.GetAPIKey()
+	if accessToken == "" {
+		return nil, cliErr.ErrAuthRequired
+	}
+
+	body := map[string]interface{}{
+		"projectId":  req.ProjectId,
+		"productId":  req.ProductId,
+	}
+
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetHeader("user-access-token", accessToken).
+		SetHeader("Content-Type", "application/json").
+		SetBody(body).
+		Post("/openapi/v1/project/product/remove")
+
+	if err != nil {
+		return nil, cliErr.WrapError(err, cliErr.ErrNetworkError)
+	}
+
+	if resp.StatusCode() == 500 {
+		if handle500Error(resp.Body()) == cliErr.ErrTokenExpired {
+			return nil, cliErr.ErrTokenExpired
+		}
+		return nil, cliErr.NewCLIError("SERVER_ERROR", "服务器内部错误，请稍后重试")
+	}
+
+	result := gjson.ParseBytes(resp.Body())
+
+	codeVal := result.Get("code").Int()
+	if codeVal != 0 {
+		message := result.Get("message").String()
+		return nil, cliErr.NewCLIErrorWithDetail("PROJECT_UNBIND_PRODUCT_ERROR",
+			fmt.Sprintf("专案解绑产品失败 (%d)", codeVal), message)
+	}
+
+	return &UnbindProductResult{
+		Success: result.Get("data.success").Bool(),
+	}, nil
+}
+
 // ExistingFile 已存在文件
 type ExistingFile struct {
 	}
