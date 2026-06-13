@@ -307,3 +307,4 @@ func SetUpdateLatestVersion(version string) error {
 	cfg.UpdateLatestVersion = version
 	return SaveAppConfig(cfg)
 }
+
