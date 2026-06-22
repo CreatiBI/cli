@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -73,8 +76,12 @@ var configInitCmd = &cobra.Command{
 			mode := selectConfigMode(cmd)
 			switch mode {
 			case "callback":
-				credentials = tryAutoFetchCredentials(cmd)
-				if credentials == nil {
+				var fallback bool
+				credentials, fallback, err = tryAutoFetchCredentials(cmd)
+				if err != nil {
+					return err
+				}
+				if credentials == nil && fallback {
 					credentials = promptForCredentials(cmd)
 				}
 			case "device":
@@ -177,8 +184,17 @@ type Credential struct {
 	DefaultWorkspace string `json:"default_workspace"`
 }
 
-// tryAutoFetchCredentials 尝试自动获取凭证（回调模式）
-func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
+// errPlaceholderCredential 表示平台页回传了 "undefined"/"null" 等占位值，
+// 回调模式不可用，调用方不应再回退到手动输入（用户手中没有可用凭证）。
+var errPlaceholderCredential = errors.New("placeholder credential received")
+
+// tryAutoFetchCredentials 尝试自动获取凭证（回调模式）。
+// 返回值：credentials, fallback, error
+//   - credentials 非空：成功
+//   - credentials 为空 + fallback=true：回退到手动输入
+//   - credentials 为空 + fallback=false：已打印错误，直接退出（如平台回传占位值）
+//   - error 非空：其他错误
+func tryAutoFetchCredentials(cmd *cobra.Command) (*Credential, bool, error) {
 	fmt.Fprintln(cmd.OutOrStdout(), "正在打开 CreatiBI 开放平台...")
 	fmt.Fprintln(cmd.OutOrStdout(), "")
 
@@ -207,13 +223,13 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 		if verbose {
 			fmt.Fprintf(cmd.ErrOrStderr(), "无法找到可用端口 (8080-8090)\n")
 		}
-		return nil
+		return nil, true, nil
 	}
 
 	platformURL := fmt.Sprintf("https://open.creatibi.cn/page/cli?form=cli&callback=%s", callbackURL)
 
 	// 创建上下文，支持 Ctrl+C 取消
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	// 监听中断信号
@@ -229,28 +245,33 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 	credChan := make(chan *Credential, 1)
 	errChan := make(chan error, 1)
 
-	http.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
-		// 解析凭证参数
-		clientID := r.URL.Query().Get("client_id")
-		clientSecret := r.URL.Query().Get("client_secret")
-		baseURL := r.URL.Query().Get("base_url")
-		defaultWorkspace := r.URL.Query().Get("default_workspace")
-
-		if clientID != "" && clientSecret != "" {
-			credChan <- &Credential{
-				ClientID:         clientID,
-				ClientSecret:     clientSecret,
-				BaseURL:          baseURL,
-				DefaultWorkspace: defaultWorkspace,
-			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("✓ 凭证已接收，CLI 将自动完成配置"))
-		} else {
-			errChan <- fmt.Errorf("缺少凭证参数")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("错误: 缺少凭证参数"))
+	mux := http.NewServeMux()
+	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
+		// 允许平台页面通过 fetch POST 回调（CORS 预检 + 实际请求）
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
+
+		cred, err := parseCredentialRequest(r)
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "[callback] method=%s url=%s content-type=%s err=%v\n",
+				r.Method, r.URL.String(), r.Header.Get("Content-Type"), err)
+		}
+		if err != nil {
+			errChan <- err
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(renderCallbackPage(false, err.Error())))
+			return
+		}
+		credChan <- cred
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(renderCallbackPage(true, "")))
 	})
+	server.Handler = mux
 
 	// 在后台启动服务器
 	go func() {
@@ -271,7 +292,7 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 	fmt.Fprintln(cmd.OutOrStdout(), "")
 
 	// 倒计时显示
-	remaining := 30
+	remaining := 300
 	done := make(chan bool, 1)
 
 	// 启动倒计时显示 goroutine
@@ -301,16 +322,22 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 		if cred.BaseURL == "" {
 			cred.BaseURL = "https://open.creatibi.cn"
 		}
-		return cred
+		return cred, false, nil
 
 	case err := <-errChan:
 		done <- true
 		shutdownServer(ctx, server)
 		fmt.Fprintln(cmd.OutOrStdout(), "\r                                    ")
-		if verbose {
-			fmt.Fprintf(cmd.ErrOrStderr(), "自动获取失败: %s\n", err.Error())
+		// 回调失败时始终打印错误（原来仅 verbose 打印，用户看不到原因）
+		fmt.Fprintf(cmd.ErrOrStderr(), "自动获取凭证失败: %s\n", err.Error())
+		if errors.Is(err, errPlaceholderCredential) {
+			// 平台页未正确回传凭证，手动输入也无法继续
+			return nil, false, nil
 		}
-		return nil
+		if verbose {
+			fmt.Fprintln(cmd.ErrOrStderr(), "将切换到手动输入模式")
+		}
+		return nil, true, nil
 
 	case <-ctx.Done():
 		done <- true
@@ -318,7 +345,7 @@ func tryAutoFetchCredentials(cmd *cobra.Command) *Credential {
 		fmt.Fprintln(cmd.OutOrStdout(), "\r                                    ")
 		fmt.Fprintln(cmd.OutOrStdout(), "")
 		fmt.Fprintln(cmd.OutOrStdout(), "超时，切换到手动输入模式")
-		return nil
+		return nil, true, nil
 	}
 }
 
@@ -327,6 +354,159 @@ func shutdownServer(ctx context.Context, server *http.Server) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	server.Shutdown(shutdownCtx)
+}
+
+// renderCallbackPage 渲染回调结果页（成功/失败）。
+func renderCallbackPage(success bool, errMsg string) string {
+	var title, message, color, script string
+	if success {
+		title = "✓ 授权成功"
+		message = "CLI 配置已完成，此页面将自动关闭..."
+		color = "#28a745"
+		script = `setTimeout(function() {
+  window.close();
+  document.getElementById('msg').textContent = 'CLI 配置已完成，请手动关闭此页面。';
+}, 1500);`
+	} else {
+		title = "✗ 授权失败"
+		message = errMsg
+		color = "#dc3545"
+		script = ""
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%s</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f6f8fa;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    color: #24292e;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+    padding: 48px 56px;
+    max-width: 520px;
+    text-align: center;
+    border-top: 4px solid %s;
+  }
+  h2 { margin: 0 0 16px; font-size: 22px; }
+  .icon { font-size: 48px; line-height: 1; margin-bottom: 16px; }
+  p { margin: 0; color: #586069; font-size: 14px; line-height: 1.6; word-break: break-all; }
+  .hint { margin-top: 20px; font-size: 12px; color: #6a737d; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon" style="color: %s;">%s</div>
+    <h2 style="color: %s;">%s</h2>
+    <p id="msg">%s</p>
+    <p class="hint">CreatiBI CLI</p>
+  </div>
+  <script>%s</script>
+</body>
+</html>`, title, color, color, map[bool]string{true: "✓", false: "✗"}[success], color, title, message, script)
+}
+
+// parseCredentialRequest 从回调请求中解析凭证，兼容 GET query / POST form / POST JSON，
+// 同时支持 client_id|app_id、client_secret|app_secret 字段别名。
+func parseCredentialRequest(r *http.Request) (*Credential, error) {
+	values := make(url.Values)
+
+	// 1. URL query
+	for k, vs := range r.URL.Query() {
+		values[k] = append(values[k], vs...)
+	}
+
+	// 2. POST form 或 JSON body
+	if r.Method == http.MethodPost {
+		ct := r.Header.Get("Content-Type")
+		if strings.Contains(ct, "application/json") {
+			body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+			if err != nil {
+				return nil, fmt.Errorf("读取请求体失败: %w", err)
+			}
+			var obj map[string]interface{}
+			if err := json.Unmarshal(body, &obj); err != nil {
+				return nil, fmt.Errorf("解析 JSON 失败: %w", err)
+			}
+			for k, v := range obj {
+				if s, ok := v.(string); ok {
+					values[k] = append(values[k], s)
+				}
+			}
+		} else {
+			if err := r.ParseForm(); err != nil {
+				return nil, fmt.Errorf("解析 form 失败: %w", err)
+			}
+			for k, vs := range r.PostForm {
+				values[k] = append(values[k], vs...)
+			}
+		}
+	}
+
+	clientID := firstNonEmpty(values.Get("client_id"), values.Get("app_id"))
+	clientSecret := firstNonEmpty(values.Get("client_secret"), values.Get("app_secret"))
+
+	// 平台页 JS 未正确读取表单时，会回传字面量 "undefined"/"null" 占位值，
+	// 此时回调模式不可用，提示用户改用设备码模式。
+	if isPlaceholderValue(clientID) || isPlaceholderValue(clientSecret) {
+		return nil, fmt.Errorf("%w: 平台回传的凭证为占位值 (client_id=%q, client_secret=%q)"+
+			"，请改用 `cbi config init --device` 设备码模式", errPlaceholderCredential, clientID, clientSecret)
+	}
+	if clientID == "" || clientSecret == "" {
+		return nil, fmt.Errorf("缺少凭证参数 (client_id=%q, client_secret=%q)",
+			maskSecret(clientID), maskSecret(clientSecret))
+	}
+
+	return &Credential{
+		ClientID:         clientID,
+		ClientSecret:     clientSecret,
+		BaseURL:          values.Get("base_url"),
+		DefaultWorkspace: values.Get("default_workspace"),
+	}, nil
+}
+
+// firstNonEmpty 返回第一个非空字符串。
+func firstNonEmpty(ss ...string) string {
+	for _, s := range ss {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// isValidCredentialValue 判断凭证值是否合法，过滤空值以及前端页面未初始化时
+// 回传的字面量占位（"undefined" / "null" / "NaN"）。
+func isValidCredentialValue(v string) bool {
+	switch v {
+	case "", "undefined", "null", "NaN":
+		return false
+	default:
+		return true
+	}
+}
+
+// isPlaceholderValue 仅判断是否为前端未初始化的字面量占位。
+func isPlaceholderValue(v string) bool {
+	switch v {
+	case "undefined", "null", "NaN":
+		return true
+	default:
+		return false
+	}
 }
 
 // openBrowser 打开浏览器
